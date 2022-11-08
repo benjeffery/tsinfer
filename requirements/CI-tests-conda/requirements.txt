@@ -1,5 +1,7 @@
 attrs==22.1.0
 colorama==0.4.6
+# Specify manually as conda doesn't seem to respect the [vcf] speification on sgkit
+cyvcf2==0.30.18
 daiquiri==3.0.0
 h5py==3.7.0 
 humanize==4.4.0
