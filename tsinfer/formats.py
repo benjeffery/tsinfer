@@ -380,8 +380,8 @@ class DataContainer:
         self.data = zarr.group()
         self.path = path
         if path is not None:
-            store = self._new_lmdb_store(max_file_size)
-            self.data = zarr.open_group(store=store, mode="w")
+            # store = self._new_lmdb_store(max_file_size)
+            self.data = zarr.open_group(self.path, mode="w")
         self.data.attrs[FORMAT_NAME_KEY] = self.FORMAT_NAME
         self.data.attrs[FORMAT_VERSION_KEY] = self.FORMAT_VERSION
 
@@ -433,12 +433,12 @@ class DataContainer:
         return store
 
     def _open_readonly(self):
-        if self.path is not None:
-            store = self._open_lmbd_readonly()
-        else:
-            # This happens when we finalise an in-memory container.
-            store = self.data.store
-        self.data = zarr.open(store=store, mode="r")
+        # if self.path is not None:
+        #     store = self._open_lmbd_readonly()
+        # else:
+        #     # This happens when we finalise an in-memory container.
+        #     store = self.data.store
+        self.data = zarr.open(self.path, mode="r")
         self._check_format()
         self._mode = self.READ_MODE
 
@@ -459,8 +459,8 @@ class DataContainer:
     def load(cls, path):
         # Try to read the file. This should raise the correct error if we have a
         # directory, missing file, permissions, etc.
-        with open(path):
-            pass
+        # with open(path):
+        #     pass
         self = cls.__new__(cls)
         self.mode = self.READ_MODE
         self.path = path
@@ -475,8 +475,8 @@ class DataContainer:
         """
         if self._mode != self.READ_MODE:
             self.finalise()
-        if self.data.store is not None:
-            self.data.store.close()
+        # if self.data.store is not None:
+        #     self.data.store.close()
         self.data = None
         self.mode = -1
 
@@ -525,21 +525,21 @@ class DataContainer:
         """
         self._check_write_modes()
         self.data.attrs[FINALISED_KEY] = True
-        if self.path is not None:
-            store = self.data.store
-            store.close()
-            logger.debug("Fixing up LMDB file size")
-            with lmdb.open(self.path, subdir=False, lock=False, writemap=True) as db:
-                # LMDB maps a very large amount of space by default. While this
-                # doesn't do any harm, it's annoying because we can't use ls to
-                # see the file sizes and the amount of RAM we're mapping can
-                # look like it's very large. So, we fix this up so that the
-                # map size is equal to the number of pages in use.
-                num_pages = db.info()["last_pgno"]
-                page_size = db.stat()["psize"]
-                db.set_mapsize(num_pages * page_size)
-            # Remove the lock file as we don't need it after this point.
-            remove_lmdb_lockfile(self.path)
+        # if self.path is not None:
+        # store = self.data.store
+        # store.close()
+        # logger.debug("Fixing up LMDB file size")
+        # with lmdb.open(self.path, subdir=False, lock=False, writemap=True) as db:
+        # LMDB maps a very large amount of space by default. While this
+        # doesn't do any harm, it's annoying because we can't use ls to
+        # see the file sizes and the amount of RAM we're mapping can
+        # look like it's very large. So, we fix this up so that the
+        # map size is equal to the number of pages in use.
+        # num_pages = db.info()["last_pgno"]
+        # page_size = db.stat()["psize"]
+        # db.set_mapsize(num_pages * page_size)
+        # Remove the lock file as we don't need it after this point.
+        # remove_lmdb_lockfile(self.path)
         self._open_readonly()
 
     def _check_format(self):
@@ -2478,7 +2478,11 @@ class Ancestor:
     end = attr.ib()
     time = attr.ib()
     focal_sites = attr.ib()
-    haplotype = attr.ib()
+    full_haplotype = attr.ib()
+
+    @property
+    def haplotype(self):
+        return self.full_haplotype[self.start : self.end]
 
     def __eq__(self, other):
         return (
@@ -3072,7 +3076,7 @@ class AncestorData(DataContainer):
             end=self.ancestors_end[id_],
             time=self.ancestors_time[id_],
             focal_sites=self.ancestors_focal_sites[id_],
-            haplotype=self.ancestors_haplotype[id_],
+            full_haplotype=self.ancestors_haplotype[id_],
         )
 
     def ancestors(self):
@@ -3091,7 +3095,7 @@ class AncestorData(DataContainer):
                 end=end[j],
                 time=time[j],
                 focal_sites=focal_sites[j],
-                haplotype=h,
+                full_haplotype=h,
             )
 
 
