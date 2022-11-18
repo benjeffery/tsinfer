@@ -39,6 +39,7 @@ import tskit
 import zarr
 from tskit import MISSING_DATA
 
+import tsinfer
 import tsinfer.exceptions as exceptions
 import tsinfer.provenance as provenance
 import tsinfer.threads as threads
@@ -2582,10 +2583,10 @@ class AncestorData(DataContainer):
             compressor=self._compressor,
         )
         self.data.create_dataset(
-            "ancestors/haplotype",
-            shape=(0,),
+            "call_genotype",
+            shape=(self.num_sites, 0),
             chunks=chunks,
-            dtype="array:i1",
+            dtype="i1",
             compressor=self._compressor,
         )
 
@@ -2602,7 +2603,7 @@ class AncestorData(DataContainer):
                 "end": self.ancestors_end,
                 "time": self.ancestors_time,
                 "focal_sites": self.ancestors_focal_sites,
-                "haplotype": self.ancestors_haplotype,
+                "full_haplotype": self.ancestors_haplotype,
             },
             num_threads=self._num_flush_threads,
         )
@@ -2652,6 +2653,7 @@ class AncestorData(DataContainer):
         """
         Returns the sequence length.
         """
+        #TODO Should come from sgkit contig length
         return self.data.attrs["sequence_length"]
 
     @property
@@ -2690,7 +2692,7 @@ class AncestorData(DataContainer):
 
     @property
     def ancestors_haplotype(self):
-        return self.data["ancestors/haplotype"]
+        return self.data["call_genotype"]
 
     @property
     def ancestors_length(self):
@@ -3046,12 +3048,14 @@ class AncestorData(DataContainer):
         if self._last_time != 0 and time > self._last_time:
             raise ValueError("older ancestors must be added before younger ones")
         self._last_time = time
+        full_haplotype = np.full((int(self.num_sites),), tskit.MISSING_DATA)
+        full_haplotype[start:end] = haplotype
         return self.ancestor_writer.add(
             start=start,
             end=end,
             time=time,
             focal_sites=focal_sites,
-            haplotype=haplotype,
+            full_haplotype=full_haplotype,
         )
 
     def finalise(self):
