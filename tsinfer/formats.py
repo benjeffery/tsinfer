@@ -89,6 +89,26 @@ def exclude_id_and_full_haplotype(attribute, value):
     return attribute.name not in ["id", "full_haplotype"]
 
 
+def open_lmbd_readonly(path):
+    # We set the mapsize here because LMBD will map 1TB of virtual memory if
+    # we don't, making it hard to figure out how much memory we're actually
+    # using.
+    map_size = None
+    try:
+        map_size = os.path.getsize(path)
+    except OSError as e:
+        raise exceptions.FileFormatError(str(e)) from e
+    try:
+        store = zarr.LMDBStore(
+            path, map_size=map_size, readonly=True, subdir=False, lock=False
+        )
+    except lmdb.InvalidError as e:
+        raise exceptions.FileFormatError(f"Unknown file format:{str(e)}") from e
+    except lmdb.Error as e:
+        raise exceptions.FileFormatError(str(e)) from e
+    return store
+
+
 def remove_lmdb_lockfile(lmdb_file):
     lockfile = lmdb_file + "-lock"
     if os.path.exists(lockfile):
@@ -474,28 +494,9 @@ class DataContainer:
         elif self.path is not None:
             self.close()
 
-    def _open_lmbd_readonly(self):
-        # We set the mapsize here because LMBD will map 1TB of virtual memory if
-        # we don't, making it hard to figure out how much memory we're actually
-        # using.
-        map_size = None
-        try:
-            map_size = os.path.getsize(self.path)
-        except OSError as e:
-            raise exceptions.FileFormatError(str(e)) from e
-        try:
-            store = zarr.LMDBStore(
-                self.path, map_size=map_size, readonly=True, subdir=False, lock=False
-            )
-        except lmdb.InvalidError as e:
-            raise exceptions.FileFormatError(f"Unknown file format:{str(e)}") from e
-        except lmdb.Error as e:
-            raise exceptions.FileFormatError(str(e)) from e
-        return store
-
     def _open_readonly(self):
         if self.path is not None:
-            store = self._open_lmbd_readonly()
+            store = open_lmbd_readonly(self.path)
         else:
             # This happens when we finalise an in-memory container.
             store = self.data.store
@@ -3190,12 +3191,17 @@ class AncestorData(DataContainer):
         if self._last_time != 0 and time > self._last_time:
             raise ValueError("older ancestors must be added before younger ones")
         self._last_time = time
+        full_haplotype = np.full((self.num_sites), MISSING_DATA, "i8")
+        full_haplotype_mask = np.full((self.num_sites), True, "i8")
+        full_haplotype[start:end] = haplotype
+        full_haplotype_mask[start:end] = False
         return self.ancestor_writer.add(
             start=start,
             end=end,
             time=time,
             focal_sites=focal_sites,
-            haplotype=haplotype,
+            full_haplotype=full_haplotype,
+            full_haplotype_mask=full_haplotype_mask,
         )
 
     def finalise(self):

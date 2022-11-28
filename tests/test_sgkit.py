@@ -34,6 +34,7 @@ import zarr
 import tsinfer
 from tsinfer import exceptions
 
+from tsinfer import formats
 
 def open_lmbd_readonly(path):
     # We set the mapsize here because LMBD will map 1TB of virtual memory if
@@ -54,6 +55,8 @@ def open_lmbd_readonly(path):
         raise exceptions.FileFormatError(str(e)) from e
     return store
 
+@pytest.mark.skipif(sys.platform == "win32", reason="No cyvcf2 on windows")
+def test_sgkit_sampledata(tmp_path):
 
 def make_ts_and_zarr(path):
     import sgkit.io.vcf
@@ -184,6 +187,18 @@ def test_sgkit_variant_mask(tmp_path):
         ts.tables.sites.ancestral_state[sites_mask], inf_ts.tables.sites.ancestral_state
     )
     # TODO - Should test that metadata is correct here
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="File permission errors on Windows")
+def test_sgkit_ancestor(small_sd_fixture, tmp_path):
+    with tempfile.TemporaryDirectory(prefix="tsi_eval") as tmpdir:
+        f = f"{tmpdir}/test.ancestors"
+        tsinfer.generate_ancestors(small_sd_fixture, path=f)
+        store = formats.open_lmbd_readonly(f)
+        ds = sgkit.load_dataset(store)
+        ds = sgkit.variant_stats(ds, merge=True)
+        ds = sgkit.sample_stats(ds, merge=True)
+        sgkit.display_genotypes(ds)
 
 
 class TestSgkitSampleDataErrors:
