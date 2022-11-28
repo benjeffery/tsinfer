@@ -19,18 +19,43 @@
 """
 Tests for the data files.
 """
+import os
 import sys
+import tempfile
 
+import lmdb
 import msprime
 import numpy as np
 import pytest
 import sgkit
+import zarr
 
 import tsinfer
+from tsinfer import exceptions
+
+
+def open_lmbd_readonly(path):
+    # We set the mapsize here because LMBD will map 1TB of virtual memory if
+    # we don't, making it hard to figure out how much memory we're actually
+    # using.
+    map_size = None
+    try:
+        map_size = os.path.getsize(path)
+    except OSError as e:
+        raise exceptions.FileFormatError(str(e)) from e
+    try:
+        store = zarr.LMDBStore(
+            path, map_size=map_size, readonly=True, subdir=False, lock=False
+        )
+    except lmdb.InvalidError as e:
+        raise exceptions.FileFormatError(f"Unknown file format:{str(e)}") from e
+    except lmdb.Error as e:
+        raise exceptions.FileFormatError(str(e)) from e
+    return store
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="No cyvcf2 on windows")
-def test_sgkit_dataset(tmp_path):
+def test_sgkit_sampledata(tmp_path):
     import sgkit.io.vcf
 
     ts = msprime.sim_ancestry(
@@ -50,6 +75,17 @@ def test_sgkit_dataset(tmp_path):
     inf_ts = tsinfer.infer(samples)
     assert np.array_equal(ts.genotype_matrix(), inf_ts.genotype_matrix())
 
+
+@pytest.mark.skipif(sys.platform == "win32", reason="File permission errors on Windows")
+def test_sgkit_ancestor(small_sd_fixture, tmp_path):
+    with tempfile.TemporaryDirectory(prefix="tsi_eval") as tmpdir:
+        f = f"{tmpdir}/test.ancestors"
+        tsinfer.generate_ancestors(small_sd_fixture, path=f)
+        store = open_lmbd_readonly(f)
+        ds = sgkit.load_dataset(store)
+        ds = sgkit.variant_stats(ds, merge=True)
+        ds = sgkit.sample_stats(ds, merge=True)
+        sgkit.display_genotypes(ds)
 
 class TestSgkitSampleDataErrors:
     def test_missing_phase(self, tmp_path):
