@@ -29,6 +29,7 @@ import numpy as np
 import pytest
 import sgkit
 import zarr
+import xarray as xr
 
 import tsinfer
 from tsinfer import exceptions
@@ -54,8 +55,7 @@ def open_lmbd_readonly(path):
     return store
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="No cyvcf2 on windows")
-def test_sgkit_sampledata(tmp_path):
+def make_ts_and_zarr(path):
     import sgkit.io.vcf
 
     ts = msprime.sim_ancestry(
@@ -63,15 +63,23 @@ def test_sgkit_sampledata(tmp_path):
         ploidy=3,
         recombination_rate=0.25,
         sequence_length=50,
-        random_seed=100,
+        random_seed=42,
     )
-    ts = msprime.sim_mutations(ts, rate=0.025, model=msprime.BinaryMutationModel())
-    with open(tmp_path / "data.vcf", "w") as f:
+    ts = msprime.sim_mutations(
+        ts, rate=0.025, model=msprime.BinaryMutationModel(), random_seed=42
+    )
+    with open(path / "data.vcf", "w") as f:
         ts.write_vcf(f)
     sgkit.io.vcf.vcf_to_zarr(
-        tmp_path / "data.vcf", tmp_path / "data.zarr", ploidy=3, max_alt_alleles=1
+        path / "data.vcf", path / "data.zarr", ploidy=3, max_alt_alleles=1
     )
-    samples = tsinfer.SgkitSampleData(tmp_path / "data.zarr")
+    return ts, path / "data.zarr"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="No cyvcf2 on windows")
+def test_sgkit_dataset(tmp_path):
+    ts, zarr_path = make_ts_and_zarr(tmp_path)
+    samples = tsinfer.SgkitSampleData(zarr_path)
     inf_ts = tsinfer.infer(samples)
     assert np.array_equal(ts.genotype_matrix(), inf_ts.genotype_matrix())
 
@@ -86,6 +94,37 @@ def test_sgkit_ancestor(small_sd_fixture, tmp_path):
         ds = sgkit.variant_stats(ds, merge=True)
         ds = sgkit.sample_stats(ds, merge=True)
         sgkit.display_genotypes(ds)
+
+def test_sgkit_variant_mask(tmp_path):
+    ts, zarr_path = make_ts_and_zarr(tmp_path)
+    ds = sgkit.load_dataset(zarr_path)
+    sites_mask = np.zeros_like(ds["variant_position"], dtype=bool)
+    for i in [1, 2, 3, 5, 9, 27]:
+        sites_mask[i] = True
+    ds.update(
+        {
+            "variant_mask": xr.DataArray(
+                data=sites_mask, dims=["variants"], name="variant_mask"
+            )
+        }
+    )
+    sgkit.save_dataset(
+        ds.drop_vars(set(ds.data_vars) - {"variant_mask"}), zarr_path, mode="a"
+    )
+    samples = tsinfer.SgkitSampleData(zarr_path)
+    assert samples.num_sites == 6
+    assert np.array_equal(samples.sites_mask, sites_mask)
+    assert np.array_equal(samples.sites_position, ts.tables.sites.position[sites_mask])
+    inf_ts = tsinfer.infer(samples)
+    assert np.array_equal(ts.genotype_matrix()[sites_mask], inf_ts.genotype_matrix())
+    assert np.array_equal(
+        ts.tables.sites.position[sites_mask], inf_ts.tables.sites.position
+    )
+    assert np.array_equal(
+        ts.tables.sites.ancestral_state[sites_mask], inf_ts.tables.sites.ancestral_state
+    )
+    # TODO - Should test that metadata is correct here
+
 
 class TestSgkitSampleDataErrors:
     def test_missing_phase(self, tmp_path):
