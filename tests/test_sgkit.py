@@ -28,8 +28,8 @@ import msprime
 import numpy as np
 import pytest
 import sgkit
-import zarr
 import xarray as xr
+import zarr
 
 import tsinfer
 from tsinfer import exceptions
@@ -71,7 +71,11 @@ def make_ts_and_zarr(path):
     with open(path / "data.vcf", "w") as f:
         ts.write_vcf(f)
     sgkit.io.vcf.vcf_to_zarr(
-        path / "data.vcf", path / "data.zarr", ploidy=3, max_alt_alleles=1
+        # max_alt_alleles=4 tests tsinfer's ability to handle empty string alleles,
+        path / "data.vcf",
+        path / "data.zarr",
+        ploidy=3,
+        max_alt_alleles=4,
     )
     return ts, path / "data.zarr"
 
@@ -82,6 +86,9 @@ def test_sgkit_dataset(tmp_path):
     samples = tsinfer.SgkitSampleData(zarr_path)
     inf_ts = tsinfer.infer(samples)
     assert np.array_equal(ts.genotype_matrix(), inf_ts.genotype_matrix())
+    # Check that the trees are non-trivial (i.e. the sites have actually been used)
+    assert inf_ts.num_trees > 10
+    assert inf_ts.num_edges > 200
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="File permission errors on Windows")
@@ -94,6 +101,7 @@ def test_sgkit_ancestor(small_sd_fixture, tmp_path):
         ds = sgkit.variant_stats(ds, merge=True)
         ds = sgkit.sample_stats(ds, merge=True)
         sgkit.display_genotypes(ds)
+
 
 def test_sgkit_variant_mask(tmp_path):
     ts, zarr_path = make_ts_and_zarr(tmp_path)
@@ -173,3 +181,15 @@ class TestSgkitSampleDataErrors:
         )
         sgkit.save_dataset(ds, path)
         tsinfer.SgkitSampleData(path)
+
+    def test_empty_alleles_not_at_end(self, tmp_path):
+        path = tmp_path / "data.zarr"
+        ds = sgkit.simulate_genotype_call_dataset(n_variant=3, n_sample=3, n_ploidy=1)
+        ds["variant_allele"] = (
+            ds["variant_allele"].dims,
+            np.array([["", "C"], ["A", "C"], ["A", "C"]], dtype="S1"),
+        )
+        sgkit.save_dataset(ds, path)
+        with pytest.raises(ValueError, match="Empty alleles must be at the end"):
+            samples = tsinfer.SgkitSampleData(path)
+            tsinfer.infer(samples)
