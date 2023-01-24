@@ -2354,11 +2354,18 @@ class SgkitSampleData(SampleData):
     @property
     def sites_ancestral_allele(self):
         try:
-            return self.data["variant_ancestral_allele_index"][self.sites_mask]
+            string_allele = self.data["variant_ancestral_allele"][:][self.sites_mask]
         except KeyError:
             # Maintains backwards compatibility: in previous tsinfer versions the
             # ancestral allele was always the zeroth element in the alleles list
+            # TODO Raise a warning here?
             return np.zeros(self.num_sites, dtype=np.int8)
+        return np.array(
+            [
+                np.where(allele == self.sites_alleles[i])[0][0]
+                for i, allele in enumerate(string_allele)
+            ]
+        )
 
     @property
     def sites_genotypes(self):

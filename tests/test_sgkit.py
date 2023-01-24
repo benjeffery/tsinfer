@@ -80,6 +80,12 @@ def make_ts_and_zarr(path):
     return ts, path / "data.zarr"
 
 
+def add_array_to_dataset(name, array, zarr_path):
+    ds = sgkit.load_dataset(zarr_path)
+    ds.update({name: xr.DataArray(data=array, dims=["variants"], name=name)})
+    sgkit.save_dataset(ds.drop_vars(set(ds.data_vars) - {name}), zarr_path, mode="a")
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="No cyvcf2 on windows")
 def test_sgkit_dataset(tmp_path):
     ts, zarr_path = make_ts_and_zarr(tmp_path)
@@ -89,6 +95,52 @@ def test_sgkit_dataset(tmp_path):
     # Check that the trees are non-trivial (i.e. the sites have actually been used)
     assert inf_ts.num_trees > 10
     assert inf_ts.num_edges > 200
+
+
+def test_sgkit_ancestral_allele(tmp_path):
+    ts, zarr_path = make_ts_and_zarr(tmp_path)
+    ds = sgkit.load_dataset(zarr_path)
+    ancestral_allele = ds.variant_allele.values[:, 0]
+    ancestral_allele[::2] = ds.variant_allele.values[::2, 1]
+    add_array_to_dataset("variant_ancestral_allele", ancestral_allele, zarr_path)
+    samples = tsinfer.SgkitSampleData(zarr_path)
+    inf_ts = tsinfer.infer(samples)
+    for v, inf_v in zip(ts.variants(), inf_ts.variants()):
+        assert np.array_equal(
+            np.array(v.alleles)[v.genotypes], np.array(inf_v.alleles)[inf_v.genotypes]
+        )
+    for aa, inf_aa in zip(ancestral_allele, inf_ts.sites()):
+        assert aa == inf_aa.ancestral_state
+    # TODO test with mask, and with absent alleles etc.
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="File permission errors on Windows")
+class TestSgkitMask:
+    @pytest.mark.parametrize("sites", [[1, 2, 3, 5, 9, 27], [0], []])
+    def test_sgkit_variant_mask(self, tmp_path, sites):
+        ts, zarr_path = make_ts_and_zarr(tmp_path)
+        ds = sgkit.load_dataset(zarr_path)
+        sites_mask = np.zeros_like(ds.variant_position, dtype=bool)
+        for i in sites:
+            sites_mask[i] = True
+        add_array_to_dataset("variant_mask", sites_mask, zarr_path)
+        samples = tsinfer.SgkitSampleData(zarr_path)
+        assert samples.num_sites == len(sites)
+        assert np.array_equal(samples.sites_mask, sites_mask)
+        assert np.array_equal(
+            samples.sites_position, ts.tables.sites.position[sites_mask]
+        )
+        inf_ts = tsinfer.infer(samples)
+        assert np.array_equal(
+            ts.genotype_matrix()[sites_mask], inf_ts.genotype_matrix()
+        )
+        assert np.array_equal(
+            ts.tables.sites.position[sites_mask], inf_ts.tables.sites.position
+        )
+        assert np.array_equal(
+            ts.tables.sites.ancestral_state[sites_mask],
+            inf_ts.tables.sites.ancestral_state,
+        )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="File permission errors on Windows")
