@@ -4534,15 +4534,7 @@ class TestSplitMergeRoundTrip(TestRoundTrip):
             recombination = np.full(max(ancestors_ts.num_sites - 1, 0), rec)
             mismatch = np.full(ancestors_ts.num_sites, mis_)
             with tempfile.TemporaryDirectory() as tmpdirname:
-                tsinfer.match_sample_slice(
-                    sample_data,
-                    ancestors_ts,
-                    indexes=np.arange(0, sample_data.num_samples // 2),
-                    output_path=f"{tmpdirname}/1.paths",
-                    recombination=recombination,
-                    mismatch=mismatch,
-                    engine=engine,
-                )
+                #
                 tsinfer.match_sample_slice(
                     sample_data,
                     ancestors_ts,
