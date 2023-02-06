@@ -61,6 +61,7 @@ class ProgressMonitor:
             "ma_match": "ma-match",
             "ms_match": "ms-match",
             "ms_paths": "ms-paths",
+            "ms_load_paths": "ms-load",
             "ms_full_mutations": "ms-muts",
             "ms_extra_sites": "ms-xsites",
             "verify": "verify",
