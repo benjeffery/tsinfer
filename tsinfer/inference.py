@@ -28,7 +28,7 @@ import json
 import logging
 import queue
 import threading
-import time
+import tracemalloc
 
 import humanize
 import numpy as np
@@ -41,6 +41,8 @@ import tsinfer.formats as formats
 import tsinfer.progress as progress
 import tsinfer.provenance as provenance
 import tsinfer.threads as threads
+
+# import time
 
 logger = logging.getLogger(__name__)
 
@@ -1141,23 +1143,25 @@ class AncestorsGenerator:
 
     def _run_synchronous(self, progress):
         a = np.zeros(self.num_sites, dtype=np.int8)
-        for t, focal_sites in self.descriptors:
-            before = time.perf_counter()
+        tracemalloc.start()
+        memory_start = tracemalloc.take_snapshot()
+        for i, (t, focal_sites) in enumerate(self.descriptors):
+            # before = time.perf_counter()
             start, end = self.ancestor_builder.make_ancestor(focal_sites, a)
-            duration = time.perf_counter() - before
-            logger.debug(
-                "Made ancestor in {:.2f}s at timepoint {} (epoch {}) "
-                "from {} to {} (len={}) with {} focal sites ({})".format(
-                    duration,
-                    t,
-                    self.timepoint_to_epoch[t],
-                    start,
-                    end,
-                    end - start,
-                    focal_sites.shape[0],
-                    focal_sites,
-                )
-            )
+            # duration = time.perf_counter() - before
+            # logger.debug(
+            #     "Made ancestor in {:.2f}s at timepoint {} (epoch {}) "
+            #     "from {} to {} (len={}) with {} focal sites ({})".format(
+            #         duration,
+            #         t,
+            #         self.timepoint_to_epoch[t],
+            #         start,
+            #         end,
+            #         end - start,
+            #         focal_sites.shape[0],
+            #         focal_sites,
+            #     )
+            # )
             self.ancestor_data.add_ancestor(
                 start=start,
                 end=end,
@@ -1166,6 +1170,11 @@ class AncestorsGenerator:
                 haplotype=a[start:end],
             )
             progress.update()
+            if i % 1000 == 0:
+                memory_end = tracemalloc.take_snapshot()
+                top_stats = memory_end.compare_to(memory_start, "lineno")
+                for stat in top_stats[:10]:
+                    print(stat)
 
     def _run_threaded(self, progress):
         # This works by pushing the ancestor descriptors onto the build_queue,
