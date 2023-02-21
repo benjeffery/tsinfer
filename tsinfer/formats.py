@@ -21,6 +21,7 @@ Manage tsinfer's various file formats.
 """
 import collections.abc as abc
 import datetime
+import functools
 import itertools
 import json
 import logging
@@ -2799,7 +2800,7 @@ class AncestorData(DataContainer):
     def num_ancestors(self):
         return self.ancestors_start.shape[0]
 
-    @property
+    @functools.cached_property
     def num_sites(self):
         """
         The number of inference sites used to generate the ancestors
@@ -3191,17 +3192,12 @@ class AncestorData(DataContainer):
         if self._last_time != 0 and time > self._last_time:
             raise ValueError("older ancestors must be added before younger ones")
         self._last_time = time
-        full_haplotype = np.full((self.num_sites), MISSING_DATA, "i8")
-        full_haplotype_mask = np.full((self.num_sites), True, "i8")
-        full_haplotype[start:end] = haplotype
-        full_haplotype_mask[start:end] = False
         return self.ancestor_writer.add(
             start=start,
             end=end,
             time=time,
             focal_sites=focal_sites,
-            full_haplotype=full_haplotype,
-            full_haplotype_mask=full_haplotype_mask,
+            haplotype=haplotype,
         )
 
     def finalise(self):
