@@ -2787,6 +2787,18 @@ class AncestorData(DataContainer):
             )
         )
 
+    def assert_equals(self, other):
+        assert self.sequence_length == other.sequence_length
+        assert self.format_name == other.format_name
+        assert self.format_version == other.format_version
+        assert self.num_ancestors == other.num_ancestors
+        assert self.num_sites == other.num_sites
+        np.testing.assert_array_equal(self.sites_position[:], other.sites_position[:])
+        np.testing.assert_array_equal(self.ancestors_start[:], other.ancestors_start[:])
+        np.testing.assert_array_equal(self.ancestors_end[:], other.ancestors_end[:])
+        # assert np.array_equal(self.ancestors_end[:], other.ancestors_end[:])
+        # np.testing.asser
+
     @property
     def sequence_length(self):
         """

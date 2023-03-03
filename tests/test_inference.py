@@ -1288,12 +1288,17 @@ class TestThreads:
         assert ts1.equals(ts2, ignore_provenance=True)
 
 
+GENOTYPE_ENCODINGS = [0, 1]
+
+
 class TestAncestorGeneratorsEquivalant:
     """
     Tests for the ancestor generation process.
     """
 
-    def verify_ancestor_generator(self, genotypes, times=None, num_threads=0):
+    def verify_ancestor_generator(
+        self, genotypes, times=None, encoding=0, num_threads=0
+    ):
         m, n = genotypes.shape
         with tsinfer.SampleData() as sample_data:
             for j in range(m):
@@ -1301,14 +1306,21 @@ class TestAncestorGeneratorsEquivalant:
                 sample_data.add_site(j, genotypes[j], time=t)
 
         adc = tsinfer.generate_ancestors(
-            sample_data, engine=tsinfer.C_ENGINE, num_threads=num_threads
+            sample_data,
+            engine=tsinfer.C_ENGINE,
+            num_threads=num_threads,
+            genotype_encoding=encoding,
         )
         adp = tsinfer.generate_ancestors(
-            sample_data, engine=tsinfer.PY_ENGINE, num_threads=num_threads
+            sample_data,
+            engine=tsinfer.PY_ENGINE,
+            num_threads=num_threads,
+            genotype_encoding=encoding,
         )
+        adc.assert_equals(adp)
 
-        # TODO clean this up when we're finished mucking around with the
-        # ancestor generator.
+        # # TODO clean this up when we're finished mucking around with the
+        # # ancestor generator.
         # print()
         # print(adc.ancestors_start[:])
         # print(adp.ancestors_start[:])
@@ -1323,15 +1335,17 @@ class TestAncestorGeneratorsEquivalant:
         # print(adc.ancestors_focal_sites[:])
         # print(adp.ancestors_focal_sites[:])
         # for fc, fp in zip(adc.ancestors_focal_sites[:], adp.ancestors_focal_sites[:]):
-        #     assert np.array_equal(fc, fp)
+        #     np.testing.assert_array_equal(fc, fp)
 
         # print("haplotype:")
-        # print(adc.ancestors_haplotype[:])
+        # print(adc.ancestors_full_haplotype[:])
         # print()
-        # print(adp.ancestors_haplotype[:])
+        # print(adp.ancestors_full_haplotype[:])
 
         # j = 0
-        # for h1, h2 in zip(adc.ancestors_haplotype[:], adp.ancestors_haplotype[:]):
+        # for h1, h2 in zip(
+        #     adc.ancestors_full_haplotype[:], adp.ancestors_full_haplotype[:]
+        # ):
         #     if not np.array_equal(h1, h2):
         #         print("ANCESTOR = ", j)
         #         print(h1)
@@ -1346,37 +1360,40 @@ class TestAncestorGeneratorsEquivalant:
         assert adp.data_equal(adc)
         return adp, adc
 
-    def verify_tree_sequence(self, ts):
-        self.verify_ancestor_generator(ts.genotype_matrix())
+    def verify_tree_sequence(self, ts, encoding=0):
+        self.verify_ancestor_generator(ts.genotype_matrix(), encoding=encoding)
         t = np.array([ts.node(site.mutations[0].node).time for site in ts.sites()])
-        self.verify_ancestor_generator(ts.genotype_matrix(), t)
+        self.verify_ancestor_generator(ts.genotype_matrix(), t, encoding=encoding)
         # Give some pathological times.
         t += 1
         t = t[::-1]
-        self.verify_ancestor_generator(ts.genotype_matrix(), t)
+        self.verify_ancestor_generator(ts.genotype_matrix(), t, encoding=encoding)
 
-    def test_no_recombination(self):
+    @pytest.mark.parametrize("encoding", GENOTYPE_ENCODINGS)
+    def test_no_recombination(self, encoding):
         ts = msprime.simulate(
             20, length=1, recombination_rate=0, mutation_rate=1, random_seed=1
         )
         assert ts.num_sites > 0 and ts.num_sites < 50
-        self.verify_tree_sequence(ts)
+        self.verify_tree_sequence(ts, encoding)
 
-    def test_with_recombination_short(self):
+    @pytest.mark.parametrize("encoding", GENOTYPE_ENCODINGS)
+    def test_with_recombination_short(self, encoding):
         ts = msprime.simulate(
             20, length=1, recombination_rate=1, mutation_rate=1, random_seed=1
         )
         assert ts.num_trees > 1
         assert ts.num_sites > 0 and ts.num_sites < 50
-        self.verify_tree_sequence(ts)
+        self.verify_tree_sequence(ts, encoding)
 
-    def test_with_recombination_long(self):
+    @pytest.mark.parametrize("encoding", GENOTYPE_ENCODINGS)
+    def test_with_recombination_long(self, encoding):
         ts = msprime.simulate(
             20, length=50, recombination_rate=1, mutation_rate=1, random_seed=1
         )
         assert ts.num_trees > 1
         assert ts.num_sites > 100
-        self.verify_tree_sequence(ts)
+        self.verify_tree_sequence(ts, encoding)
 
     def test_random_data(self):
         G, _ = get_random_data_example(20, 50, seed=1234)
@@ -3535,7 +3552,6 @@ class TestInsertSrbAncestors:
     """
 
     def insert_srb_ancestors(self, samples, ts):
-
         srb_index = {}
         edges = sorted(ts.edges(), key=lambda e: (e.child, e.left))
         last_edge = edges[0]
@@ -3621,7 +3637,6 @@ class TestAugmentedAncestors:
     def verify_augmented_ancestors(
         self, subset, ancestors_ts, augmented_ancestors, path_compression
     ):
-
         t1 = ancestors_ts.dump_tables()
         t2 = augmented_ancestors.dump_tables()
         k = len(subset)
@@ -4562,3 +4577,89 @@ class TestSplitMergeRoundTrip(TestRoundTrip):
                 sample_data.sequence_length,
                 ancestral_alleles,
             )
+
+
+# Simple functions to pack and unpack bit representations. Just here so that
+# we have something to base a C implementation off, probably should be moved
+# to another file.
+
+
+def packbits(a):
+    if len(a) == 0:
+        return a
+    b = []
+    j = 0
+    k = 1
+    x = a[0]
+    for j in range(1, len(a)):
+        if j % 8 == 0:
+            b.append(x)
+            x = 0
+            k = 0
+        x += a[j] << k
+        k += 1
+    b.append(x)
+    return b
+
+
+def unpackbits(a):
+    if len(a) == 0:
+        return a
+    b = []
+    for j in range(len(a)):
+        for k in range(8):
+            b.append(int(a[j] & (1 << k) != 0))
+    return b
+
+
+@pytest.mark.parametrize(
+    "a",
+    [
+        np.array([], dtype=np.uint8),
+        [0],
+        [1],
+        [0, 1],
+        [0, 1, 0, 1],
+        [0, 1, 0, 1, 0, 1, 0, 0],
+        [0, 1, 0, 1, 0, 1, 0, 0, 1],
+        np.ones(10, dtype=np.uint8),
+        np.zeros(10, dtype=np.uint8),
+        np.ones(15, dtype=np.uint8),
+        np.zeros(15, dtype=np.uint8),
+        np.ones(16, dtype=np.uint8),
+        np.zeros(16, dtype=np.uint8),
+        np.ones(17, dtype=np.uint8),
+        np.zeros(17, dtype=np.uint8),
+    ],
+)
+def test_packbits(a):
+    v1 = np.packbits(a, bitorder="little")
+    v2 = packbits(np.array(a, dtype=np.uint8))
+    np.testing.assert_array_equal(v1, v2)
+
+
+@pytest.mark.parametrize(
+    "a",
+    [
+        np.array([], dtype=np.uint8),
+        [0],
+        [1],
+        [0, 1],
+        [0, 1, 0, 1],
+        [0, 1, 0, 1, 0, 1, 0, 0],
+        [0, 1, 0, 1, 0, 1, 0, 0, 1],
+        np.ones(10, dtype=np.uint8),
+        np.zeros(10, dtype=np.uint8),
+        np.ones(15, dtype=np.uint8),
+        np.zeros(15, dtype=np.uint8),
+        np.ones(16, dtype=np.uint8),
+        np.zeros(16, dtype=np.uint8),
+        np.ones(17, dtype=np.uint8),
+        np.zeros(17, dtype=np.uint8),
+    ],
+)
+def test_unpackbits(a):
+    packed = np.packbits(np.array(a, dtype=np.uint8))
+    v1 = np.unpackbits(packed, bitorder="little")
+    v2 = unpackbits(packed)
+    np.testing.assert_array_equal(v1, v2)

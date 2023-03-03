@@ -92,13 +92,13 @@ AncestorBuilder_init(AncestorBuilder *self, PyObject *args, PyObject *kwds)
 {
     int ret = -1;
     int err;
-    static char *kwlist[] = {"num_samples", "max_sites", NULL};
+    static char *kwlist[] = {"num_samples", "max_sites", "flags", NULL};
     int num_samples, max_sites;
     int flags = 0;
 
     self->builder = NULL;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "ii", kwlist,
-                &num_samples, &max_sites)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "ii|i", kwlist,
+                &num_samples, &max_sites, &flags)) {
         goto out;
     }
     self->builder = PyMem_Malloc(sizeof(ancestor_builder_t));

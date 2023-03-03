@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2018-2020 University of Oxford
+** Copyright (C) 2018-2023 University of Oxford
 **
 ** This file is part of tsinfer.
 **
@@ -41,6 +41,8 @@
 #define TSI_COMPRESS_PATH 1
 #define TSI_EXTENDED_CHECKS 2
 
+#define TSI_GENOTYPE_ENCODING_ONE_BIT 1
+
 #define TSI_NODE_IS_PC_ANCESTOR ((tsk_flags_t)(1u << 16))
 
 typedef int8_t allele_t;
@@ -66,7 +68,7 @@ typedef struct _node_segment_list_node_t {
 
 typedef struct {
     double time;
-    allele_t *genotypes;
+    uint8_t *encoded_genotypes;
 } site_t;
 
 typedef struct {
@@ -82,8 +84,8 @@ typedef struct _site_list_t {
 } site_list_t;
 
 typedef struct {
-    allele_t *genotypes;
-    size_t num_samples;
+    uint8_t *encoded_genotypes;
+    size_t encoded_genotypes_size;
     size_t num_sites;
     site_list_t *sites;
 } pattern_map_t;
@@ -110,6 +112,10 @@ typedef struct {
     avl_tree_t time_map;
     tsk_blkalloc_t allocator;
     ancestor_descriptor_t *descriptors;
+    size_t encoded_genotypes_size;
+    size_t decoded_genotypes_size;
+    uint8_t *genotype_encode_buffer;
+    allele_t *genotype_decode_buffer;
 } ancestor_builder_t;
 
 typedef struct _mutation_list_node_t {
@@ -252,6 +258,9 @@ int tree_sequence_builder_dump_edges(tree_sequence_builder_t *self, tsk_id_t *le
     tsk_id_t *right, tsk_id_t *parent, tsk_id_t *children);
 int tree_sequence_builder_dump_mutations(tree_sequence_builder_t *self, tsk_id_t *site,
     tsk_id_t *node, allele_t *derived_state, tsk_id_t *parent);
+
+int packbits(const allele_t *restrict source, size_t len, uint8_t *restrict dest);
+void unpackbits(const uint8_t *restrict source, size_t len, allele_t *restrict dest);
 
 #define tsi_safe_free(pointer)                                                          \
     do {                                                                                \
