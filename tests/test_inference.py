@@ -1309,40 +1309,40 @@ class TestAncestorGeneratorsEquivalant:
 
         # TODO clean this up when we're finished mucking around with the
         # ancestor generator.
-        # print()
-        # print(adc.ancestors_start[:])
-        # print(adp.ancestors_start[:])
-        # assert np.array_equal(adc.ancestors_start[:], adp.ancestors_start[:])
+        print()
+        print(adc.ancestors_start[:])
+        print(adp.ancestors_start[:])
+        assert np.array_equal(adc.ancestors_start[:], adp.ancestors_start[:])
 
-        # print("end:")
-        # print(adc.ancestors_end[:])
-        # print(adp.ancestors_end[:])
-        # assert np.array_equal(adc.ancestors_end[:], adp.ancestors_end[:])
+        print("end:")
+        print(adc.ancestors_end[:])
+        print(adp.ancestors_end[:])
+        assert np.array_equal(adc.ancestors_end[:], adp.ancestors_end[:])
 
-        # print("focal_sites:")
-        # print(adc.ancestors_focal_sites[:])
-        # print(adp.ancestors_focal_sites[:])
-        # for fc, fp in zip(adc.ancestors_focal_sites[:], adp.ancestors_focal_sites[:]):
-        #     assert np.array_equal(fc, fp)
+        print("focal_sites:")
+        print(adc.ancestors_focal_sites[:])
+        print(adp.ancestors_focal_sites[:])
+        for fc, fp in zip(adc.ancestors_focal_sites[:], adp.ancestors_focal_sites[:]):
+            assert np.array_equal(fc, fp)
 
-        # print("haplotype:")
-        # print(adc.ancestors_haplotype[:])
-        # print()
-        # print(adp.ancestors_haplotype[:])
+        print("haplotype:")
+        print(adc.ancestors_full_haplotype[:])
+        print()
+        print(adp.ancestors_full_haplotype[:])
 
-        # j = 0
-        # for h1, h2 in zip(adc.ancestors_haplotype[:], adp.ancestors_haplotype[:]):
-        #     if not np.array_equal(h1, h2):
-        #         print("ANCESTOR = ", j)
-        #         print(h1)
-        #         print(h2)
-        #         print(adp.ancestors_focal_sites[j])
-        #         # print(adc.ancestors_focal_sites[j])
-        #         # print(adc.ancestors_start[j])
-        #         # print(adc.ancestors_end[j])
-        #     j += 1
-        # print(adc)
-        # print(adp)
+        j = 0
+        for h1, h2 in zip(adc.ancestors_full_haplotype[:], adp.ancestors_full_haplotype[:]):
+            if not np.array_equal(h1, h2):
+                print("ANCESTOR = ", j)
+                print(h1)
+                print(h2)
+                print(adp.ancestors_focal_sites[j])
+                # print(adc.ancestors_focal_sites[j])
+                # print(adc.ancestors_start[j])
+                # print(adc.ancestors_end[j])
+            j += 1
+        print(adc)
+        print(adp)
         assert adp.data_equal(adc)
         return adp, adc
 

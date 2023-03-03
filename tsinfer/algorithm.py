@@ -76,6 +76,8 @@ class AncestorBuilder:
         # It is handy to be able to add to d without checking, so we make this a
         # defaultdict of defaultdicts
         self.time_map = collections.defaultdict(lambda: collections.defaultdict(list))
+        self.pack_bits = True
+        # self.pack_bits = False
 
     @property
     def num_sites(self):
@@ -85,6 +87,10 @@ class AncestorBuilder:
         """
         Adds a new site at the specified ID to the builder.
         """
+        if self.pack_bits:
+            if np.any(genotypes < 0):
+                raise ValueError("Can't pack with missing data")
+            genotypes = np.packbits(genotypes)
         site_id = len(self.sites)
         self.sites.append(Site(site_id, time, genotypes))
         sites_at_fixed_timepoint = self.time_map[time]
@@ -121,7 +127,10 @@ class AncestorBuilder:
         index = np.where(samples == 1)[0]
         for j in range(a + 1, b):
             if self.sites[j].time > self.sites[a].time:
-                gj = self.sites[j].genotypes[index]
+                g = self.sites[j].genotypes
+                if self.pack_bits:
+                    g = np.unpackbits(g)
+                gj = g[index]
                 gj = gj[gj != tskit.MISSING_DATA]
                 if not (np.all(gj == 1) or np.all(gj == 0)):
                     return True
@@ -163,7 +172,10 @@ class AncestorBuilder:
         that we allow the derived state to be a different non-zero integer.
         """
         focal_time = self.sites[focal_site].time
-        S = set(np.where(self.sites[focal_site].genotypes == 1)[0])
+        g = self.sites[focal_site].genotypes
+        if self.pack_bits:
+            g = np.unpackbits(g)
+        S = set(np.where(g == 1)[0])
         # Break when we've lost half of S
         min_sample_set_size = len(S) // 2
         remove_buffer = []
@@ -174,6 +186,8 @@ class AncestorBuilder:
             last_site = site_index
             if self.sites[site_index].time > focal_time:
                 g_l = self.sites[site_index].genotypes
+                if self.pack_bits:
+                    g_l = np.unpackbits(g_l)
                 ones = sum(g_l[u] == 1 for u in S)
                 zeros = sum(g_l[u] == 0 for u in S)
                 # print("pos", site_index, ". Ones:", ones, ". Zeros:", zeros)
@@ -210,7 +224,10 @@ class AncestorBuilder:
         a[:] = tskit.MISSING_DATA
         for focal_site in focal_sites:
             a[focal_site] = 1
-        S = set(np.where(self.sites[focal_sites[0]].genotypes == 1)[0])
+        g = self.sites[focal_sites[0]].genotypes
+        if self.pack_bits:
+            g = np.unpackbits(g)
+        S = set(np.where(g == 1)[0])
         if len(S) == 0:
             raise ValueError("Cannot compute ancestor for a site at freq 0")
         # Interpolate ancestral haplotype within focal region (i.e. region
@@ -221,6 +238,8 @@ class AncestorBuilder:
                 a[site_index] = 0
                 if self.sites[site_index].time > focal_time:
                     g_l = self.sites[site_index].genotypes
+                    if self.pack_bits:
+                        g_l = np.unpackbits(g_l)
                     ones = sum(g_l[u] == 1 for u in S)
                     zeros = sum(g_l[u] == 0 for u in S)
                     # print("\t", site_index, ones, zeros, sep="\t")
