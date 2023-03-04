@@ -1293,7 +1293,7 @@ class TestAncestorGeneratorsEquivalant:
     Tests for the ancestor generation process.
     """
 
-    def verify_ancestor_generator(self, genotypes, times=None, num_threads=0):
+    def verify_ancestor_generator(self, genotypes, times=None, encoding=0, num_threads=0):
         m, n = genotypes.shape
         with tsinfer.SampleData() as sample_data:
             for j in range(m):
@@ -1301,66 +1301,69 @@ class TestAncestorGeneratorsEquivalant:
                 sample_data.add_site(j, genotypes[j], time=t)
 
         adc = tsinfer.generate_ancestors(
-            sample_data, engine=tsinfer.C_ENGINE, num_threads=num_threads
+            sample_data, engine=tsinfer.C_ENGINE, num_threads=num_threads,
+            genotype_encoding=encoding
         )
         adp = tsinfer.generate_ancestors(
-            sample_data, engine=tsinfer.PY_ENGINE, num_threads=num_threads
+            sample_data, engine=tsinfer.PY_ENGINE, num_threads=num_threads,
+            genotype_encoding=encoding
         )
 
-        # TODO clean this up when we're finished mucking around with the
-        # ancestor generator.
-        print()
-        print(adc.ancestors_start[:])
-        print(adp.ancestors_start[:])
-        assert np.array_equal(adc.ancestors_start[:], adp.ancestors_start[:])
+        # # TODO clean this up when we're finished mucking around with the
+        # # ancestor generator.
+        # print()
+        # print(adc.ancestors_start[:])
+        # print(adp.ancestors_start[:])
+        # assert np.array_equal(adc.ancestors_start[:], adp.ancestors_start[:])
 
-        print("end:")
-        print(adc.ancestors_end[:])
-        print(adp.ancestors_end[:])
-        assert np.array_equal(adc.ancestors_end[:], adp.ancestors_end[:])
+        # print("end:")
+        # print(adc.ancestors_end[:])
+        # print(adp.ancestors_end[:])
+        # assert np.array_equal(adc.ancestors_end[:], adp.ancestors_end[:])
 
-        print("focal_sites:")
-        print(adc.ancestors_focal_sites[:])
-        print(adp.ancestors_focal_sites[:])
-        for fc, fp in zip(adc.ancestors_focal_sites[:], adp.ancestors_focal_sites[:]):
-            assert np.array_equal(fc, fp)
+        # print("focal_sites:")
+        # print(adc.ancestors_focal_sites[:])
+        # print(adp.ancestors_focal_sites[:])
+        # for fc, fp in zip(adc.ancestors_focal_sites[:], adp.ancestors_focal_sites[:]):
+        #     assert np.array_equal(fc, fp)
 
-        print("haplotype:")
-        print(adc.ancestors_full_haplotype[:])
-        print()
-        print(adp.ancestors_full_haplotype[:])
+        # print("haplotype:")
+        # print(adc.ancestors_full_haplotype[:])
+        # print()
+        # print(adp.ancestors_full_haplotype[:])
 
-        j = 0
-        for h1, h2 in zip(adc.ancestors_full_haplotype[:], adp.ancestors_full_haplotype[:]):
-            if not np.array_equal(h1, h2):
-                print("ANCESTOR = ", j)
-                print(h1)
-                print(h2)
-                print(adp.ancestors_focal_sites[j])
-                # print(adc.ancestors_focal_sites[j])
-                # print(adc.ancestors_start[j])
-                # print(adc.ancestors_end[j])
-            j += 1
-        print(adc)
-        print(adp)
+        # j = 0
+        # for h1, h2 in zip(adc.ancestors_full_haplotype[:], adp.ancestors_full_haplotype[:]):
+        #     if not np.array_equal(h1, h2):
+        #         print("ANCESTOR = ", j)
+        #         print(h1)
+        #         print(h2)
+        #         print(adp.ancestors_focal_sites[j])
+        #         # print(adc.ancestors_focal_sites[j])
+        #         # print(adc.ancestors_start[j])
+        #         # print(adc.ancestors_end[j])
+        #     j += 1
+        # print(adc)
+        # print(adp)
         assert adp.data_equal(adc)
         return adp, adc
 
-    def verify_tree_sequence(self, ts):
-        self.verify_ancestor_generator(ts.genotype_matrix())
+    def verify_tree_sequence(self, ts, encoding=0):
+        self.verify_ancestor_generator(ts.genotype_matrix(), encoding=encoding)
         t = np.array([ts.node(site.mutations[0].node).time for site in ts.sites()])
-        self.verify_ancestor_generator(ts.genotype_matrix(), t)
+        self.verify_ancestor_generator(ts.genotype_matrix(), t, encoding=encoding)
         # Give some pathological times.
         t += 1
         t = t[::-1]
-        self.verify_ancestor_generator(ts.genotype_matrix(), t)
+        self.verify_ancestor_generator(ts.genotype_matrix(), t, encoding=encoding)
 
-    def test_no_recombination(self):
+    @pytest.mark.parametrize("encoding", [0, 1])
+    def test_no_recombination(self, encoding):
         ts = msprime.simulate(
             20, length=1, recombination_rate=0, mutation_rate=1, random_seed=1
         )
         assert ts.num_sites > 0 and ts.num_sites < 50
-        self.verify_tree_sequence(ts)
+        self.verify_tree_sequence(ts, encoding)
 
     def test_with_recombination_short(self):
         ts = msprime.simulate(

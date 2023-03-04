@@ -348,6 +348,7 @@ def generate_ancestors(
     path=None,
     exclude_positions=None,
     num_threads=0,
+    genotype_encoding=0,  # FIXME
     # Deliberately undocumented parameters below
     engine=constants.C_ENGINE,
     progress_monitor=None,
@@ -399,6 +400,7 @@ def generate_ancestors(
         ancestor_data_kwargs=kwargs,
         num_threads=num_threads,
         engine=engine,
+        genotype_encoding=genotype_encoding,
         progress_monitor=progress_monitor,
     )
     generator.add_sites(exclude_positions)
@@ -1055,6 +1057,7 @@ class AncestorsGenerator:
         ancestor_data_kwargs,
         num_threads=0,
         engine=constants.C_ENGINE,
+        genotype_encoding=0,  # FIXME
         progress_monitor=None,
     ):
         self.sample_data = sample_data
@@ -1076,7 +1079,9 @@ class AncestorsGenerator:
         elif engine == constants.PY_ENGINE:
             logger.debug("Using Python AncestorBuilder implementation")
             self.ancestor_builder = algorithm.AncestorBuilder(
-                self.num_samples, self.max_sites
+                self.num_samples,
+                self.max_sites,
+                genotype_encoding=genotype_encoding,
             )
         else:
             raise ValueError(f"Unknown engine:{engine}")

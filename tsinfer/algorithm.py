@@ -26,6 +26,7 @@ updates made to the low-level C engine should be made here
 first.
 """
 import collections
+import enum
 
 import attr
 import numpy as np
@@ -60,13 +61,20 @@ class Site:
     genotypes = attr.ib()
 
 
+class GenotypeEncoding(enum.IntEnum):
+    EIGHT_BIT = 0
+    ONE_BIT = 1
+
+
 class AncestorBuilder:
     """
     Builds inferred ancestors.
     This implementation partially allows for multiple focal sites per ancestor
     """
 
-    def __init__(self, num_samples, max_sites):
+    def __init__(
+        self, num_samples, max_sites, genotype_encoding=GenotypeEncoding.EIGHT_BIT
+    ):
         self.num_samples = num_samples
         self.sites = []
         # Create a mapping from time to sites. Different sites can exist at the same
@@ -76,20 +84,25 @@ class AncestorBuilder:
         # It is handy to be able to add to d without checking, so we make this a
         # defaultdict of defaultdicts
         self.time_map = collections.defaultdict(lambda: collections.defaultdict(list))
-        self.pack_bits = True
-        # self.pack_bits = False
+        self.genotype_encoding = genotype_encoding
 
     @property
     def num_sites(self):
         return len(self.sites)
 
+    def get_site_genotypes(self, site_id):
+        g = self.sites[site_id].genotypes
+        if self.genotype_encoding == GenotypeEncoding.ONE_BIT:
+            g = np.unpackbits(g)[: self.num_samples]
+        return g
+
     def add_site(self, time, genotypes):
         """
         Adds a new site at the specified ID to the builder.
         """
-        if self.pack_bits:
-            if np.any(genotypes < 0):
-                raise ValueError("Can't pack with missing data")
+        if self.genotype_encoding == GenotypeEncoding.ONE_BIT:
+            if np.any(genotypes < 0) or np.any(genotypes > 1):
+                raise ValueError("One bit encoding only works for binary data")
             genotypes = np.packbits(genotypes)
         site_id = len(self.sites)
         self.sites.append(Site(site_id, time, genotypes))
@@ -127,9 +140,7 @@ class AncestorBuilder:
         index = np.where(samples == 1)[0]
         for j in range(a + 1, b):
             if self.sites[j].time > self.sites[a].time:
-                g = self.sites[j].genotypes
-                if self.pack_bits:
-                    g = np.unpackbits(g)
+                g = self.get_site_genotypes(j)
                 gj = g[index]
                 gj = gj[gj != tskit.MISSING_DATA]
                 if not (np.all(gj == 1) or np.all(gj == 0)):
@@ -151,11 +162,13 @@ class AncestorBuilder:
             keys = sorted(self.time_map[t].keys())
             for key in keys:
                 focal_sites = np.array(self.time_map[t][key], dtype=np.int32)
-                samp = np.frombuffer(key, dtype=np.int8)
+                genotypes = self.get_site_genotypes(focal_sites[0])
                 # print("focal_sites = ", key, samp, focal_sites)
                 start = 0
                 for j in range(len(focal_sites) - 1):
-                    if self.break_ancestor(focal_sites[j], focal_sites[j + 1], samp):
+                    if self.break_ancestor(
+                        focal_sites[j], focal_sites[j + 1], genotypes
+                    ):
                         ret.append((t, focal_sites[start : j + 1]))
                         start = j + 1
                 ret.append((t, focal_sites[start:]))
@@ -172,9 +185,7 @@ class AncestorBuilder:
         that we allow the derived state to be a different non-zero integer.
         """
         focal_time = self.sites[focal_site].time
-        g = self.sites[focal_site].genotypes
-        if self.pack_bits:
-            g = np.unpackbits(g)
+        g = self.get_site_genotypes(focal_site)
         S = set(np.where(g == 1)[0])
         # Break when we've lost half of S
         min_sample_set_size = len(S) // 2
@@ -185,9 +196,7 @@ class AncestorBuilder:
             a[site_index] = 0
             last_site = site_index
             if self.sites[site_index].time > focal_time:
-                g_l = self.sites[site_index].genotypes
-                if self.pack_bits:
-                    g_l = np.unpackbits(g_l)
+                g_l = self.get_site_genotypes(site_index)
                 ones = sum(g_l[u] == 1 for u in S)
                 zeros = sum(g_l[u] == 0 for u in S)
                 # print("pos", site_index, ". Ones:", ones, ". Zeros:", zeros)
@@ -224,9 +233,7 @@ class AncestorBuilder:
         a[:] = tskit.MISSING_DATA
         for focal_site in focal_sites:
             a[focal_site] = 1
-        g = self.sites[focal_sites[0]].genotypes
-        if self.pack_bits:
-            g = np.unpackbits(g)
+        g = self.get_site_genotypes(focal_sites[0])
         S = set(np.where(g == 1)[0])
         if len(S) == 0:
             raise ValueError("Cannot compute ancestor for a site at freq 0")
@@ -237,9 +244,7 @@ class AncestorBuilder:
             for site_index in range(focal_sites[j] + 1, focal_sites[j + 1]):
                 a[site_index] = 0
                 if self.sites[site_index].time > focal_time:
-                    g_l = self.sites[site_index].genotypes
-                    if self.pack_bits:
-                        g_l = np.unpackbits(g_l)
+                    g_l = self.get_site_genotypes(site_index)
                     ones = sum(g_l[u] == 1 for u in S)
                     zeros = sum(g_l[u] == 0 for u in S)
                     # print("\t", site_index, ones, zeros, sep="\t")
