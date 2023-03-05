@@ -195,12 +195,18 @@ out:
     return ret;
 }
 
+static inline allele_t *
+ancestor_builder_get_site_genotypes(ancestor_builder_t *self, tsk_id_t site)
+{
+    return self->sites[site].genotypes;
+}
+
 static inline void
 ancestor_builder_get_consistent_samples(
     ancestor_builder_t *self, tsk_id_t site, tsk_id_t *samples, size_t *num_samples)
 {
     tsk_id_t j, k;
-    allele_t *restrict genotypes = self->sites[site].genotypes;
+    allele_t *restrict genotypes = ancestor_builder_get_site_genotypes(self, site);
 
     k = 0;
     for (j = 0; j < (tsk_id_t) self->num_samples; j++) {
@@ -250,7 +256,7 @@ ancestor_builder_compute_ancestral_states(ancestor_builder_t *self, int directio
             /* /1*     printf("%d, ", sample_set[j]); *1/ */
             /* /1* } *1/ */
 
-            genotypes = self->sites[l].genotypes;
+            genotypes = ancestor_builder_get_site_genotypes(self, (tsk_id_t) l);
             ones = 0;
             zeros = 0;
             for (j = 0; j < sample_set_size; j++) {
@@ -342,7 +348,7 @@ ancestor_builder_compute_between_focal_sites(ancestor_builder_t *self,
                 /* for (k = 0; k < sample_set_size; k++) { */
                 /*     printf("%d, ", sample_set[k]); */
                 /* } */
-                genotypes = self->sites[l].genotypes;
+                genotypes = ancestor_builder_get_site_genotypes(self, (tsk_id_t) l);
                 ones = 0;
                 zeros = 0;
                 for (k = 0; k < sample_set_size; k++) {
@@ -486,13 +492,15 @@ ancestor_builder_break_ancestor(ancestor_builder_t *self, tsk_id_t a, tsk_id_t b
     bool ret = false;
     tsk_id_t j, k;
     size_t ones, missing;
+    allele_t *restrict genotypes;
 
     for (j = a + 1; j < b && !ret; j++) {
         if (self->sites[j].time > self->sites[a].time) {
+            genotypes = ancestor_builder_get_site_genotypes(self, j);
             ones = 0;
             missing = 0;
             for (k = 0; k < (tsk_id_t) num_samples; k++) {
-                switch (self->sites[j].genotypes[samples[k]]) {
+                switch (genotypes[samples[k]]) {
                     case TSK_MISSING_DATA:
                         missing++;
                         break;
