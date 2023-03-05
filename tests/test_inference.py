@@ -920,7 +920,7 @@ def random_string(rng, max_len=10):
     Uses the specified random generator to generate a random string.
     """
     s = ""
-    for _ in range(rng.randint(1, max_len)):
+    for _ in range(rng.randint(0, max_len)):
         s += rng.choice(string.ascii_letters)
     return s
 
@@ -1293,7 +1293,9 @@ class TestAncestorGeneratorsEquivalant:
     Tests for the ancestor generation process.
     """
 
-    def verify_ancestor_generator(self, genotypes, times=None, encoding=0, num_threads=0):
+    def verify_ancestor_generator(
+        self, genotypes, times=None, encoding=0, num_threads=0
+    ):
         m, n = genotypes.shape
         with tsinfer.SampleData() as sample_data:
             for j in range(m):
@@ -1301,12 +1303,16 @@ class TestAncestorGeneratorsEquivalant:
                 sample_data.add_site(j, genotypes[j], time=t)
 
         adc = tsinfer.generate_ancestors(
-            sample_data, engine=tsinfer.C_ENGINE, num_threads=num_threads,
-            genotype_encoding=encoding
+            sample_data,
+            engine=tsinfer.C_ENGINE,
+            num_threads=num_threads,
+            genotype_encoding=encoding,
         )
         adp = tsinfer.generate_ancestors(
-            sample_data, engine=tsinfer.PY_ENGINE, num_threads=num_threads,
-            genotype_encoding=encoding
+            sample_data,
+            engine=tsinfer.PY_ENGINE,
+            num_threads=num_threads,
+            genotype_encoding=encoding,
         )
 
         # # TODO clean this up when we're finished mucking around with the
@@ -3511,7 +3517,6 @@ class TestInsertSrbAncestors:
     """
 
     def insert_srb_ancestors(self, samples, ts):
-
         srb_index = {}
         edges = sorted(ts.edges(), key=lambda e: (e.child, e.left))
         last_edge = edges[0]
@@ -3597,7 +3602,6 @@ class TestAugmentedAncestors:
     def verify_augmented_ancestors(
         self, subset, ancestors_ts, augmented_ancestors, path_compression
     ):
-
         t1 = ancestors_ts.dump_tables()
         t2 = augmented_ancestors.dump_tables()
         k = len(subset)
@@ -4474,67 +4478,46 @@ class TestDebugOutput:
             assert "Summary of mismatch probabilities" not in caplog.text
 
 
-class TestSplitMergeRoundTrip(TestRoundTrip):
-    """
-    Test that we can round-trip data when we match samples in slices then combine.
-    """
+def packbits(a):
+    if len(a) == 0:
+        return a
+    b = []
+    j = 0
+    k = 1
+    x = a[0]
+    for j in range(1, len(a)):
+        if j % 8 == 0:
+            b.append(x)
+            x = 0
+            k = 0
+        x += a[j] << k
+        k += 1
+    b.append(x)
+    return b
 
-    def verify_data_round_trip(
-        self,
-        genotypes,
-        positions,
-        alleles=None,
-        sequence_length=None,
-        site_times=None,
-        individual_times=None,
-        ancestral_alleles=None,
-    ):
-        sample_data = self.create_sample_data(
-            genotypes,
-            positions,
-            alleles,
-            sequence_length,
-            site_times,
-            individual_times,
-            ancestral_alleles,
-        )
-        ancestors = tsinfer.generate_ancestors(sample_data)
-        ancestors_ts = tsinfer.match_ancestors(sample_data, ancestors)
-        rho = [1e-9, 1e-3, 0.1]
-        mis = [1e-9, 1e-3, 0.1]
-        engines = [tsinfer.C_ENGINE, tsinfer.PY_ENGINE]
-        for rec, mis_, engine in itertools.product(rho, mis, engines):
-            # Set the arrays directly - we need to do this here so that we
-            # gurarantee that there are mutations above samples. We need
-            # those to test the path saving fully.
-            recombination = np.full(max(ancestors_ts.num_sites - 1, 0), rec)
-            mismatch = np.full(ancestors_ts.num_sites, mis_)
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                #
-                tsinfer.match_sample_slice(
-                    sample_data,
-                    ancestors_ts,
-                    indexes=np.arange(
-                        sample_data.num_samples // 2, sample_data.num_samples
-                    ),
-                    output_path=f"{tmpdirname}/2.paths",
-                    recombination=recombination,
-                    mismatch=mismatch,
-                    engine=engine,
-                )
-                ts = tsinfer.combine_sample_slices(
-                    sample_data,
-                    ancestors_ts,
-                    recombination=recombination,
-                    mismatch=mismatch,
-                    engine=engine,
-                    path_array=[f"{tmpdirname}/1.paths", f"{tmpdirname}/2.paths"],
-                )
-            self.assert_lossless(
-                ts,
-                genotypes,
-                positions,
-                alleles,
-                sample_data.sequence_length,
-                ancestral_alleles,
-            )
+
+@pytest.mark.parametrize(
+    "a",
+    [
+        np.array([], dtype=np.uint8),
+        [1],
+        [0],
+        [1],
+        [0, 1],
+        [0, 1, 0, 1],
+        [0, 1, 0, 1, 0, 1, 0, 0],
+        [0, 1, 0, 1, 0, 1, 0, 0, 1],
+        np.ones(10, dtype=np.uint8),
+        np.zeros(10, dtype=np.uint8),
+        np.ones(15, dtype=np.uint8),
+        np.zeros(15, dtype=np.uint8),
+        np.ones(16, dtype=np.uint8),
+        np.zeros(16, dtype=np.uint8),
+        np.ones(17, dtype=np.uint8),
+        np.zeros(17, dtype=np.uint8),
+    ],
+)
+def test_packbits(a):
+    v1 = np.packbits(a, bitorder="little")
+    v2 = packbits(np.array(a, dtype=np.uint8))
+    np.testing.assert_array_equal(v1, v2)
