@@ -1339,7 +1339,9 @@ class TestAncestorGeneratorsEquivalant:
         # print(adp.ancestors_full_haplotype[:])
 
         # j = 0
-        # for h1, h2 in zip(adc.ancestors_full_haplotype[:], adp.ancestors_full_haplotype[:]):
+        # for h1, h2 in zip(
+        #     adc.ancestors_full_haplotype[:], adp.ancestors_full_haplotype[:]
+        # ):
         #     if not np.array_equal(h1, h2):
         #         print("ANCESTOR = ", j)
         #         print(h1)
@@ -4478,6 +4480,11 @@ class TestDebugOutput:
             assert "Summary of mismatch probabilities" not in caplog.text
 
 
+# Simple functions to pack and unpack bit representations. Just here so that
+# we have something to base a C implementation off, probably should be moved
+# to another file.
+
+
 def packbits(a):
     if len(a) == 0:
         return a
@@ -4496,11 +4503,20 @@ def packbits(a):
     return b
 
 
+def unpackbits(a):
+    if len(a) == 0:
+        return a
+    b = []
+    for j in range(len(a)):
+        for k in range(8):
+            b.append(int(a[j] & (1 << k) != 0))
+    return b
+
+
 @pytest.mark.parametrize(
     "a",
     [
         np.array([], dtype=np.uint8),
-        [1],
         [0],
         [1],
         [0, 1],
@@ -4520,4 +4536,31 @@ def packbits(a):
 def test_packbits(a):
     v1 = np.packbits(a, bitorder="little")
     v2 = packbits(np.array(a, dtype=np.uint8))
+    np.testing.assert_array_equal(v1, v2)
+
+
+@pytest.mark.parametrize(
+    "a",
+    [
+        np.array([], dtype=np.uint8),
+        [0],
+        [1],
+        [0, 1],
+        [0, 1, 0, 1],
+        [0, 1, 0, 1, 0, 1, 0, 0],
+        [0, 1, 0, 1, 0, 1, 0, 0, 1],
+        np.ones(10, dtype=np.uint8),
+        np.zeros(10, dtype=np.uint8),
+        np.ones(15, dtype=np.uint8),
+        np.zeros(15, dtype=np.uint8),
+        np.ones(16, dtype=np.uint8),
+        np.zeros(16, dtype=np.uint8),
+        np.ones(17, dtype=np.uint8),
+        np.zeros(17, dtype=np.uint8),
+    ],
+)
+def test_unpackbits(a):
+    packed = np.packbits(np.array(a, dtype=np.uint8))
+    v1 = np.unpackbits(packed, bitorder="little")
+    v2 = unpackbits(packed)
     np.testing.assert_array_equal(v1, v2)

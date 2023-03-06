@@ -27,6 +27,18 @@
 
 #include "avl.h"
 
+
+void 
+packbits(const allele_t * restrict source, size_t len, uint8_t *restrict dest)
+{
+    size_t j;
+
+    for (j = 0; j < len; j++) {
+        dest[j] = source[j];
+    }
+
+}
+
 static int
 cmp_time_map(const void *a, const void *b)
 {

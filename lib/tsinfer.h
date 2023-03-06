@@ -253,6 +253,9 @@ int tree_sequence_builder_dump_edges(tree_sequence_builder_t *self, tsk_id_t *le
 int tree_sequence_builder_dump_mutations(tree_sequence_builder_t *self, tsk_id_t *site,
     tsk_id_t *node, allele_t *derived_state, tsk_id_t *parent);
 
+
+void packbits(const allele_t * restrict source, size_t len, uint8_t *restrict dest);
+
 #define tsi_safe_free(pointer)                                                          \
     do {                                                                                \
         if (pointer != NULL) {                                                          \

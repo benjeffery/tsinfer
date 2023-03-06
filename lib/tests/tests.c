@@ -849,6 +849,12 @@ test_random_data_n100_m100(void)
 }
 
 static void
+test_packbits(void)
+{
+
+}
+
+static void
 test_strerror(void)
 {
     int j;
@@ -932,6 +938,8 @@ main(int argc, char **argv)
         { "test_random_data_n10_m100", test_random_data_n10_m100 },
         { "test_random_data_n100_m10", test_random_data_n100_m10 },
         { "test_random_data_n100_m100", test_random_data_n100_m100 },
+
+        { "test_packbits", test_packbits },
 
         { "test_strerror", test_strerror },
 
