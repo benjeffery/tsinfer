@@ -28,16 +28,63 @@
 #include "avl.h"
 
 
-void 
+int 
 packbits(const allele_t * restrict source, size_t len, uint8_t *restrict dest)
 {
-    size_t j;
+    int ret = 0;
+    size_t j, k, i;
+    int x = 0;
 
+    k = 0; 
     for (j = 0; j < len; j++) {
-        dest[j] = source[j];
+        if (source[j] < 0 || source[j] > 1) {
+            ret = TSI_ERR_ONE_BIT_NON_BINARY;
+            goto out;
+        }
+        if (j % 8 == 0 && j > 0) {
+            dest[k] = (uint8_t) x;
+            k++;
+            i = 0;
+            x = 0;
+        }
+        x += source[j] << i;
+        i++;
     }
+    dest[k] = (uint8_t) x;
+out:
+    return ret;
 
 }
+
+void 
+unpackbits(const uint8_t * restrict source, size_t len, allele_t *restrict dest)
+{
+    size_t j, k, i;
+    int v;
+
+    k = 0;
+    for (j = 0; j < len; j++) {
+        /* I'm assuming any compiler will unroll this? */
+        for (i = 0; i < 8; i++) {
+            v = source[j] & (1 << i);
+            dest[k] = (allele_t) v != 0;
+            k++;
+        }
+    }
+    printf("k = %d\n",(int) k);
+
+}
+
+
+/* def unpackbits(a): */
+/*     if len(a) == 0: */
+/*         return a */
+/*     b = [] */
+/*     for j in range(len(a)): */
+/*         for k in range(8): */
+/*             b.append(int(a[j] & (1 << k) != 0)) */
+/*     return b */
+
 
 static int
 cmp_time_map(const void *a, const void *b)

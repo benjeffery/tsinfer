@@ -851,7 +851,19 @@ test_random_data_n100_m100(void)
 static void
 test_packbits(void)
 {
+    /* WIP */
+    int ret = 0;
+    allele_t a[] = {0, 1, 0, 1, 0, 1, 0, 0, 1};
+    allele_t c[16];
+    uint8_t b[2];
 
+    ret = packbits(a, 9, b);
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
+    CU_ASSERT_EQUAL(b[0], 42);
+    CU_ASSERT_EQUAL(b[1], 1);
+
+    unpackbits(b, 2, c);
+    CU_ASSERT_TRUE(memcmp(a, b, sizeof(a)));
 }
 
 static void
