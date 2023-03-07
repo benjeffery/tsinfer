@@ -1288,6 +1288,9 @@ class TestThreads:
         assert ts1.equals(ts2, ignore_provenance=True)
 
 
+GENOTYPE_ENCODINGS = [0, 1]
+
+
 class TestAncestorGeneratorsEquivalant:
     """
     Tests for the ancestor generation process.
@@ -1315,44 +1318,44 @@ class TestAncestorGeneratorsEquivalant:
             genotype_encoding=encoding,
         )
 
-        # # TODO clean this up when we're finished mucking around with the
-        # # ancestor generator.
-        # print()
-        # print(adc.ancestors_start[:])
-        # print(adp.ancestors_start[:])
-        # assert np.array_equal(adc.ancestors_start[:], adp.ancestors_start[:])
+        # TODO clean this up when we're finished mucking around with the
+        # ancestor generator.
+        print()
+        print(adc.ancestors_start[:])
+        print(adp.ancestors_start[:])
+        assert np.array_equal(adc.ancestors_start[:], adp.ancestors_start[:])
 
-        # print("end:")
-        # print(adc.ancestors_end[:])
-        # print(adp.ancestors_end[:])
-        # assert np.array_equal(adc.ancestors_end[:], adp.ancestors_end[:])
+        print("end:")
+        print(adc.ancestors_end[:])
+        print(adp.ancestors_end[:])
+        assert np.array_equal(adc.ancestors_end[:], adp.ancestors_end[:])
 
-        # print("focal_sites:")
-        # print(adc.ancestors_focal_sites[:])
-        # print(adp.ancestors_focal_sites[:])
-        # for fc, fp in zip(adc.ancestors_focal_sites[:], adp.ancestors_focal_sites[:]):
-        #     assert np.array_equal(fc, fp)
+        print("focal_sites:")
+        print(adc.ancestors_focal_sites[:])
+        print(adp.ancestors_focal_sites[:])
+        for fc, fp in zip(adc.ancestors_focal_sites[:], adp.ancestors_focal_sites[:]):
+            assert np.array_equal(fc, fp)
 
-        # print("haplotype:")
-        # print(adc.ancestors_full_haplotype[:])
-        # print()
-        # print(adp.ancestors_full_haplotype[:])
+        print("haplotype:")
+        print(adc.ancestors_full_haplotype[:])
+        print()
+        print(adp.ancestors_full_haplotype[:])
 
-        # j = 0
-        # for h1, h2 in zip(
-        #     adc.ancestors_full_haplotype[:], adp.ancestors_full_haplotype[:]
-        # ):
-        #     if not np.array_equal(h1, h2):
-        #         print("ANCESTOR = ", j)
-        #         print(h1)
-        #         print(h2)
-        #         print(adp.ancestors_focal_sites[j])
-        #         # print(adc.ancestors_focal_sites[j])
-        #         # print(adc.ancestors_start[j])
-        #         # print(adc.ancestors_end[j])
-        #     j += 1
-        # print(adc)
-        # print(adp)
+        j = 0
+        for h1, h2 in zip(
+            adc.ancestors_full_haplotype[:], adp.ancestors_full_haplotype[:]
+        ):
+            if not np.array_equal(h1, h2):
+                print("ANCESTOR = ", j)
+                print(h1)
+                print(h2)
+                print(adp.ancestors_focal_sites[j])
+                # print(adc.ancestors_focal_sites[j])
+                # print(adc.ancestors_start[j])
+                # print(adc.ancestors_end[j])
+            j += 1
+        print(adc)
+        print(adp)
         assert adp.data_equal(adc)
         return adp, adc
 
@@ -1365,7 +1368,7 @@ class TestAncestorGeneratorsEquivalant:
         t = t[::-1]
         self.verify_ancestor_generator(ts.genotype_matrix(), t, encoding=encoding)
 
-    @pytest.mark.parametrize("encoding", [0, 1])
+    @pytest.mark.parametrize("encoding", GENOTYPE_ENCODINGS)
     def test_no_recombination(self, encoding):
         ts = msprime.simulate(
             20, length=1, recombination_rate=0, mutation_rate=1, random_seed=1
@@ -1373,21 +1376,23 @@ class TestAncestorGeneratorsEquivalant:
         assert ts.num_sites > 0 and ts.num_sites < 50
         self.verify_tree_sequence(ts, encoding)
 
-    def test_with_recombination_short(self):
+    @pytest.mark.parametrize("encoding", GENOTYPE_ENCODINGS)
+    def test_with_recombination_short(self, encoding):
         ts = msprime.simulate(
             20, length=1, recombination_rate=1, mutation_rate=1, random_seed=1
         )
         assert ts.num_trees > 1
         assert ts.num_sites > 0 and ts.num_sites < 50
-        self.verify_tree_sequence(ts)
+        self.verify_tree_sequence(ts, encoding)
 
-    def test_with_recombination_long(self):
+    @pytest.mark.parametrize("encoding", GENOTYPE_ENCODINGS)
+    def test_with_recombination_long(self, encoding):
         ts = msprime.simulate(
             20, length=50, recombination_rate=1, mutation_rate=1, random_seed=1
         )
         assert ts.num_trees > 1
         assert ts.num_sites > 100
-        self.verify_tree_sequence(ts)
+        self.verify_tree_sequence(ts, encoding)
 
     def test_random_data(self):
         G, _ = get_random_data_example(20, 50, seed=1234)

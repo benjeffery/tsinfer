@@ -110,7 +110,10 @@ class TestAncestorBuilder:
         for bad_value in [None, "serf", [[], []], ["asdf"], {}]:
             with pytest.raises(TypeError):
                 _tsinfer.AncestorBuilder(num_samples=2, max_sites=bad_value)
+            with pytest.raises(TypeError):
                 _tsinfer.AncestorBuilder(num_samples=bad_value, max_sites=2)
+            with pytest.raises(TypeError):
+                _tsinfer.AncestorBuilder(num_samples=2, max_sites=2, flags=bad_value)
 
         for bad_num_samples in [0, 1]:
             with pytest.raises(_tsinfer.LibraryError):

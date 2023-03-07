@@ -1073,8 +1073,14 @@ class AncestorsGenerator:
         self.num_threads = num_threads
         if engine == constants.C_ENGINE:
             logger.debug("Using C AncestorBuilder implementation")
+            # FIXME use enum properly
+            flags = 0
+            if genotype_encoding == 1:
+                flags = 1
             self.ancestor_builder = _tsinfer.AncestorBuilder(
-                self.num_samples, self.max_sites
+                self.num_samples,
+                self.max_sites,
+                flags=flags,
             )
         elif engine == constants.PY_ENGINE:
             logger.debug("Using Python AncestorBuilder implementation")
