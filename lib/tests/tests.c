@@ -849,21 +849,83 @@ test_random_data_n100_m100(void)
 }
 
 static void
-test_packbits(void)
+test_packbits_1(void)
 {
-    /* WIP */
     int ret = 0;
-    allele_t a[] = {0, 1, 0, 1, 0, 1, 0, 0, 1};
-    allele_t c[16];
-    uint8_t b[2];
+    allele_t a[] = { 0, 1, 0, 1, 0, 1, 0, 0, 1 };
+    uint8_t b[] = { 42, 1 };
+    uint8_t bitpacked[100];
+    allele_t bitunpacked[100];
 
-    ret = packbits(a, 9, b);
+    ret = packbits(a, sizeof(a), bitpacked);
     CU_ASSERT_EQUAL_FATAL(ret, 0);
-    CU_ASSERT_EQUAL(b[0], 42);
-    CU_ASSERT_EQUAL(b[1], 1);
+    CU_ASSERT_EQUAL(memcmp(b, bitpacked, sizeof(b)), 0);
+    unpackbits(b, sizeof(b), bitunpacked);
+    CU_ASSERT_EQUAL(memcmp(a, bitunpacked, sizeof(a)), 0);
+}
 
-    unpackbits(b, 2, c);
-    CU_ASSERT_TRUE(memcmp(a, b, sizeof(a)));
+static void
+test_packbits_2(void)
+{
+    int ret = 0;
+    allele_t a[] = { 0, 1, 0, 1, 0, 1, 0, 0 };
+    uint8_t b[] = { 42 };
+    uint8_t bitpacked[100];
+    allele_t bitunpacked[100];
+
+    ret = packbits(a, sizeof(a), bitpacked);
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
+    CU_ASSERT_EQUAL(memcmp(b, bitpacked, sizeof(b)), 0);
+    unpackbits(b, sizeof(b), bitunpacked);
+    CU_ASSERT_EQUAL(memcmp(a, bitunpacked, sizeof(a)), 0);
+}
+
+static void
+test_packbits_3(void)
+{
+    int ret = 0;
+    allele_t a[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+    uint8_t b[] = { 255, 127 };
+    uint8_t bitpacked[100];
+    allele_t bitunpacked[100];
+
+    ret = packbits(a, sizeof(a), bitpacked);
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
+    CU_ASSERT_EQUAL(memcmp(b, bitpacked, sizeof(b)), 0);
+    unpackbits(b, sizeof(b), bitunpacked);
+    CU_ASSERT_EQUAL(memcmp(a, bitunpacked, sizeof(a)), 0);
+}
+
+static void
+test_packbits_4(void)
+{
+    int ret = 0;
+    allele_t a[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    uint8_t b[] = { 0, 0, 0 };
+    uint8_t bitpacked[100];
+    allele_t bitunpacked[100];
+
+    ret = packbits(a, sizeof(a), bitpacked);
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
+    CU_ASSERT_EQUAL(memcmp(b, bitpacked, sizeof(b)), 0);
+    unpackbits(b, sizeof(b), bitunpacked);
+    CU_ASSERT_EQUAL(memcmp(a, bitunpacked, sizeof(a)), 0);
+}
+
+static void
+test_packbits_errors(void)
+{
+    int ret = 0;
+    allele_t a[] = { 0 };
+    uint8_t b[] = { 0 };
+
+    a[0] = -1;
+    ret = packbits(a, sizeof(a), b);
+    CU_ASSERT_EQUAL_FATAL(ret, TSI_ERR_ONE_BIT_NON_BINARY);
+
+    a[0] = 2;
+    ret = packbits(a, sizeof(a), b);
+    CU_ASSERT_EQUAL_FATAL(ret, TSI_ERR_ONE_BIT_NON_BINARY);
 }
 
 static void
@@ -951,7 +1013,11 @@ main(int argc, char **argv)
         { "test_random_data_n100_m10", test_random_data_n100_m10 },
         { "test_random_data_n100_m100", test_random_data_n100_m100 },
 
-        { "test_packbits", test_packbits },
+        { "test_packbits_1", test_packbits_1 },
+        { "test_packbits_2", test_packbits_2 },
+        { "test_packbits_3", test_packbits_3 },
+        { "test_packbits_4", test_packbits_4 },
+        { "test_packbits_errors", test_packbits_errors },
 
         { "test_strerror", test_strerror },
 

@@ -28,14 +28,15 @@
 #include "avl.h"
 
 
-int 
+int
 packbits(const allele_t * restrict source, size_t len, uint8_t *restrict dest)
 {
     int ret = 0;
     size_t j, k, i;
     int x = 0;
 
-    k = 0; 
+    k = 0;
+    i = 0;
     for (j = 0; j < len; j++) {
         if (source[j] < 0 || source[j] > 1) {
             ret = TSI_ERR_ONE_BIT_NON_BINARY;
@@ -56,7 +57,7 @@ out:
 
 }
 
-void 
+void
 unpackbits(const uint8_t * restrict source, size_t len, allele_t *restrict dest)
 {
     size_t j, k, i;
@@ -67,12 +68,10 @@ unpackbits(const uint8_t * restrict source, size_t len, allele_t *restrict dest)
         /* I'm assuming any compiler will unroll this? */
         for (i = 0; i < 8; i++) {
             v = source[j] & (1 << i);
-            dest[k] = (allele_t) v != 0;
-            k++;
+            dest[k + i] = (allele_t) v != 0;
         }
+        k += 8;
     }
-    printf("k = %d\n",(int) k);
-
 }
 
 
