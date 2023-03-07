@@ -110,7 +110,8 @@ class AncestorBuilder:
         # Sites with an identical variant distribution (i.e. with the same
         # genotypes.tobytes() value) and at the same time, are put into the same ancestor
         # to which we allocate a unique ID (just use the genotypes.tobytes() value)
-        ancestor_uid = genotypes.tobytes()
+        # ancestor_uid = genotypes.tobytes()
+        ancestor_uid = tuple(genotypes)
         # Add each site to the list for this ancestor_uid at this timepoint
         sites_at_fixed_timepoint[ancestor_uid].append(site_id)
 
@@ -152,7 +153,8 @@ class AncestorBuilder:
         Returns a list of (time, focal_sites) tuples describing the ancestors in time
         order (oldest first)
         """
-        # self.print_state()
+        # FIXME the order doesn't matter here any more as we're sorting at the
+        # top level
         ret = []
         for t in sorted(self.time_map.keys(), reverse=True):
             # Find all the ancestors at the same timepoint

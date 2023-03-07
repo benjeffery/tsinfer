@@ -1165,7 +1165,7 @@ class AncestorsGenerator:
                     start,
                     end,
                     end - start,
-                    focal_sites.shape[0],
+                    len(focal_sites),
                     focal_sites,
                 )
             )
@@ -1240,7 +1240,11 @@ class AncestorsGenerator:
         drain_add_queue()
 
     def run(self):
-        self.descriptors = self.ancestor_builder.ancestor_descriptors()
+        d = [
+            (t, tuple(focal_sites))
+            for t, focal_sites in self.ancestor_builder.ancestor_descriptors()
+        ]
+        self.descriptors = sorted(d, reverse=True)
         self.num_ancestors = len(self.descriptors)
         # Maps epoch numbers to their corresponding ancestor times.
         self.timepoint_to_epoch = {}

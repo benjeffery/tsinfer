@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2020 University of Oxford
+** Copyright (C) 2020-2023 University of Oxford
 **
 ** This file is part of tsinfer.
 **
