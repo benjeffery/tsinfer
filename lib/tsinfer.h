@@ -66,7 +66,7 @@ typedef struct _node_segment_list_node_t {
 
 typedef struct {
     double time;
-    allele_t *genotypes;
+    uint8_t *encoded_genotypes;
 } site_t;
 
 typedef struct {
@@ -82,8 +82,8 @@ typedef struct _site_list_t {
 } site_list_t;
 
 typedef struct {
-    allele_t *genotypes;
-    size_t num_samples;
+    uint8_t *encoded_genotypes;
+    size_t encoded_genotypes_size;
     size_t num_sites;
     site_list_t *sites;
 } pattern_map_t;
@@ -110,6 +110,10 @@ typedef struct {
     avl_tree_t time_map;
     tsk_blkalloc_t allocator;
     ancestor_descriptor_t *descriptors;
+    size_t encoded_genotypes_size;
+    size_t decoded_genotypes_size;
+    uint8_t *genotype_encode_buffer;
+    allele_t *genotype_decode_buffer;
 } ancestor_builder_t;
 
 typedef struct _mutation_list_node_t {
