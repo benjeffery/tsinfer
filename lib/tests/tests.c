@@ -331,7 +331,7 @@ initialise_builder(tree_sequence_builder_t *tsb, double oldest_time)
 
 static void
 run_random_data(size_t num_samples, size_t num_sites, int seed,
-    double recombination_rate, double mismatch_rate)
+    double recombination_rate, double mismatch_rate, int ancestor_builder_options)
 {
     tsk_table_collection_t tables;
     ancestor_builder_t ancestor_builder;
@@ -359,7 +359,8 @@ run_random_data(size_t num_samples, size_t num_sites, int seed,
     }
 
     CU_ASSERT_FATAL(num_samples >= 2);
-    ret = ancestor_builder_alloc(&ancestor_builder, num_samples, num_sites, 0);
+    ret = ancestor_builder_alloc(
+        &ancestor_builder, num_samples, num_sites, ancestor_builder_options);
     CU_ASSERT_EQUAL_FATAL(ret, 0);
     ret = tree_sequence_builder_alloc(&tsb, num_sites, NULL, 1, 1, 0);
     CU_ASSERT_EQUAL_FATAL(ret, 0);
@@ -378,6 +379,7 @@ run_random_data(size_t num_samples, size_t num_sites, int seed,
     }
     ret = ancestor_builder_finalise(&ancestor_builder);
     CU_ASSERT_EQUAL_FATAL(ret, 0);
+    /* ancestor_builder_print_state(&ancestor_builder, stdout); */
 
     initialise_builder(&tsb, ancestor_builder.descriptors[0].time);
 
@@ -804,8 +806,8 @@ test_random_data_n5_m3(void)
 
     for (seed = 1; seed < 100; seed++) {
         /* printf("seed = %d\n", seed); */
-        run_random_data(5, 3, seed, 1e-3, 1e-20);
-        run_random_data(5, 3, seed, 1e-20, 1e-3);
+        run_random_data(5, 3, seed, 1e-3, 1e-20, 0);
+        run_random_data(5, 3, seed, 1e-20, 1e-3, 0);
     }
 }
 
@@ -813,39 +815,63 @@ static void
 test_random_data_n5_m20(void)
 {
     int seed;
+    size_t j;
+    int options[] = { 0, TSI_GENOTYPE_ENCODING_ONE_BIT };
 
-    for (seed = 1; seed < 10; seed++) {
-        run_random_data(5, 20, seed, 1e-3, 1e-20);
-        run_random_data(5, 20, seed, 1e-20, 1e-3);
+    for (j = 0; j < sizeof(options) / sizeof(*options); j++) {
+        for (seed = 1; seed < 10; seed++) {
+            run_random_data(5, 20, seed, 1e-3, 1e-20, options[j]);
+            run_random_data(5, 20, seed, 1e-20, 1e-3, options[j]);
+        }
     }
 }
 
 static void
 test_random_data_n10_m10(void)
 {
-    run_random_data(10, 10, 43, 1e-3, 1e-20);
-    run_random_data(10, 10, 43, 1e-20, 1e-3);
+    size_t j;
+    int options[] = { 0, TSI_GENOTYPE_ENCODING_ONE_BIT };
+
+    for (j = 0; j < sizeof(options) / sizeof(*options); j++) {
+        run_random_data(10, 10, 43, 1e-3, 1e-20, options[j]);
+        run_random_data(10, 10, 43, 1e-20, 1e-3, options[j]);
+    }
 }
 
 static void
 test_random_data_n10_m100(void)
 {
-    run_random_data(10, 100, 43, 1e-3, 1e-20);
-    run_random_data(10, 100, 43, 1e-20, 1e-3);
+    size_t j;
+    int options[] = { 0, TSI_GENOTYPE_ENCODING_ONE_BIT };
+
+    for (j = 0; j < sizeof(options) / sizeof(*options); j++) {
+        run_random_data(10, 100, 43, 1e-3, 1e-20, options[j]);
+        run_random_data(10, 100, 43, 1e-20, 1e-3, options[j]);
+    }
 }
 
 static void
 test_random_data_n100_m10(void)
 {
-    run_random_data(10, 10, 1243, 1e-3, 1e-20);
-    run_random_data(10, 10, 1243, 1e-20, 1e-3);
+    size_t j;
+    int options[] = { 0, TSI_GENOTYPE_ENCODING_ONE_BIT };
+
+    for (j = 0; j < sizeof(options) / sizeof(*options); j++) {
+        run_random_data(10, 10, 1243, 1e-3, 1e-20, options[j]);
+        run_random_data(10, 10, 1243, 1e-20, 1e-3, options[j]);
+    }
 }
 
 static void
 test_random_data_n100_m100(void)
 {
-    run_random_data(100, 100, 42, 1e-3, 1e-20);
-    run_random_data(100, 100, 42, 1e-20, 1e-3);
+    size_t j;
+    int options[] = { 0, TSI_GENOTYPE_ENCODING_ONE_BIT };
+
+    for (j = 0; j < sizeof(options) / sizeof(*options); j++) {
+        run_random_data(100, 100, 42, 1e-3, 1e-20, options[j]);
+        run_random_data(100, 100, 42, 1e-20, 1e-3, options[j]);
+    }
 }
 
 static void
