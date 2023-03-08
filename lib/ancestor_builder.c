@@ -92,7 +92,6 @@ cmp_pattern_map(const void *a, const void *b)
     const pattern_map_t *ib = (pattern_map_t const *) b;
     int ret = memcmp(
         ia->encoded_genotypes, ib->encoded_genotypes, ia->encoded_genotypes_size);
-    assert(ia->encoded_genotypes_size == ib->encoded_genotypes_size);
     return ret;
 }
 

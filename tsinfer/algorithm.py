@@ -101,8 +101,7 @@ class AncestorBuilder:
         Adds a new site at the specified ID to the builder.
         """
         if self.genotype_encoding == GenotypeEncoding.ONE_BIT:
-            if np.any(genotypes < 0) or np.any(genotypes > 1):
-                raise ValueError("One bit encoding only works for binary data")
+            assert np.all(genotypes >= 0) and np.all(genotypes <= 1)
             genotypes = np.packbits(genotypes)
         site_id = len(self.sites)
         self.sites.append(Site(site_id, time, genotypes))
