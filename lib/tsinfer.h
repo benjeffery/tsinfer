@@ -110,7 +110,8 @@ typedef struct {
     int flags;
     site_t *sites;
     avl_tree_t time_map;
-    tsk_blkalloc_t allocator;
+    tsk_blkalloc_t descriptor_allocator;
+    tsk_blkalloc_t indexing_allocator;
     ancestor_descriptor_t *descriptors;
     size_t encoded_genotypes_size;
     size_t decoded_genotypes_size;
@@ -209,9 +210,9 @@ int ancestor_builder_free(ancestor_builder_t *self);
 int ancestor_builder_print_state(ancestor_builder_t *self, FILE *out);
 int ancestor_builder_add_site(
     ancestor_builder_t *self, double time, allele_t *genotypes);
-int ancestor_builder_make_ancestor(ancestor_builder_t *self, size_t num_focal_sites,
-    tsk_id_t *focal_sites, tsk_id_t *start, tsk_id_t *end, allele_t *haplotype);
 int ancestor_builder_finalise(ancestor_builder_t *self);
+int ancestor_builder_make_ancestor(const ancestor_builder_t *self, size_t num_focal_sites,
+    const tsk_id_t *focal_sites, tsk_id_t *start, tsk_id_t *end, allele_t *haplotype);
 
 int ancestor_matcher_alloc(ancestor_matcher_t *self,
     tree_sequence_builder_t *tree_sequence_builder, double *recombination_rate,
