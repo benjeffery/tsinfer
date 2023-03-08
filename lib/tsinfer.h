@@ -66,9 +66,9 @@ typedef struct _node_segment_list_node_t {
     struct _node_segment_list_node_t *next;
 } node_segment_list_node_t;
 
+/* TODO this struct is now a bit redundant, we might just factor out */
 typedef struct {
     double time;
-    uint8_t *encoded_genotypes;
 } site_t;
 
 typedef struct {
@@ -114,8 +114,8 @@ typedef struct {
     ancestor_descriptor_t *descriptors;
     size_t encoded_genotypes_size;
     size_t decoded_genotypes_size;
-    uint8_t *genotype_encode_buffer;
     allele_t *genotype_decode_buffer;
+    uint8_t *genotype_store;
 } ancestor_builder_t;
 
 typedef struct _mutation_list_node_t {
