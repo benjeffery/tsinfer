@@ -1240,10 +1240,13 @@ class AncestorsGenerator:
         drain_add_queue()
 
     def run(self):
-        d = [
-            (t, tuple(focal_sites))
-            for t, focal_sites in self.ancestor_builder.ancestor_descriptors()
-        ]
+        descriptors = self.ancestor_builder.ancestor_descriptors()
+        peak_ram = humanize.naturalsize(self.ancestor_builder.mem_size, binary=True)
+        logger.info(f"Ancestor builder peak RAM: {peak_ram}")
+
+        # Sort the descriptors so that we deterministically create ancestors
+        # in the same order across implementations
+        d = [(t, tuple(focal_sites)) for t, focal_sites in descriptors]
         self.descriptors = sorted(d, reverse=True)
         self.num_ancestors = len(self.descriptors)
         # Maps epoch numbers to their corresponding ancestor times.

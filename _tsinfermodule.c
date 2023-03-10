@@ -330,7 +330,7 @@ static PyGetSetDef AncestorBuilder_getsetters[] = {
     {"num_sites", (getter) AncestorBuilder_get_num_sites, NULL, "The number of sites."},
     {"num_ancestors", (getter) AncestorBuilder_get_num_ancestors, NULL,
         "The number of ancestors."},
-    {"num_ancestors", (getter) AncestorBuilder_get_memsize, NULL,
+    {"mem_size", (getter) AncestorBuilder_get_memsize, NULL,
         "The number of allocated bytes."},
     {NULL}  /* Sentinel */
 };
