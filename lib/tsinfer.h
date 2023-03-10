@@ -116,7 +116,6 @@ typedef struct {
     size_t encoded_genotypes_size;
     size_t decoded_genotypes_size;
     uint8_t *genotype_encode_buffer;
-    allele_t *genotype_decode_buffer;
 } ancestor_builder_t;
 
 typedef struct _mutation_list_node_t {
