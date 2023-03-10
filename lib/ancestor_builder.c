@@ -114,9 +114,7 @@ ancestor_builder_check_state(const ancestor_builder_t *self)
             count = 0;
             for (s = pattern_map->sites; s != NULL; s = s->next) {
                 assert(self->sites[s->site].time == time_map->time);
-                assert(self->genotype_store
-                           + (((size_t) s->site) * self->encoded_genotypes_size)
-                       == pattern_map->encoded_genotypes);
+                assert(self->sites[s->site].encoded_genotypes == pattern_map->encoded_genotypes);
                 count++;
             }
             assert(pattern_map->num_sites == count);
@@ -173,7 +171,7 @@ ancestor_builder_print_state(ancestor_builder_t *self, FILE *out)
         }
         fprintf(out, "\n");
     }
-    tsk_blkalloc_print_state(&self->descriptor_allocator, out);
+    tsk_blkalloc_print_state(&self->main_allocator, out);
     tsk_blkalloc_print_state(&self->indexing_allocator, out);
     ancestor_builder_check_state(self);
     return 0;
@@ -206,24 +204,22 @@ ancestor_builder_alloc(
     self->sites = calloc(max_sites, sizeof(site_t));
     self->descriptors = calloc(max_sites, sizeof(ancestor_descriptor_t));
     self->genotype_decode_buffer = calloc(self->decoded_genotypes_size, 1);
+    self->genotype_encode_buffer = calloc(self->encoded_genotypes_size, 1);
     if (self->sites == NULL || self->descriptors == NULL
-        || self->genotype_decode_buffer == NULL) {
-        ret = TSI_ERR_NO_MEMORY;
-        goto out;
-    }
-    self->genotype_store = malloc(max_sites * self->encoded_genotypes_size);
-    if (self->genotype_store == NULL) {
+        || self->genotype_decode_buffer == NULL
+        || self->genotype_encode_buffer == NULL
+        ) {
         ret = TSI_ERR_NO_MEMORY;
         goto out;
     }
 
     /* Pre-calculate the maximum sizes asked for in other methods when calling
      * tsk_blkalloc_get(&self->allocator, ...)  */
-    max_size = TSK_MAX(self->num_samples * sizeof(allele_t), max_size);
+    max_size = TSK_MAX(128 * self->num_samples * sizeof(allele_t), max_size);
     /* NB: using self->max_sites below is probably overkill: the real number should be
      * the maximum number of focal sites in a single ancestor, usually << max_sites */
     max_size = TSK_MAX(self->max_sites * sizeof(tsk_id_t), max_size);
-    ret = tsk_blkalloc_init(&self->descriptor_allocator, max_size);
+    ret = tsk_blkalloc_init(&self->main_allocator, max_size);
     if (ret != 0) {
         goto out;
     }
@@ -236,14 +232,21 @@ out:
     return ret;
 }
 
+size_t
+ancestor_builder_get_memsize(const ancestor_builder_t *self)
+{
+    /* Ignore the other allocs as insignificant */
+    return self->main_allocator.total_size + self->indexing_allocator.total_size;
+}
+
 int
 ancestor_builder_free(ancestor_builder_t *self)
 {
     tsi_safe_free(self->sites);
     tsi_safe_free(self->descriptors);
     tsk_safe_free(self->genotype_decode_buffer);
-    tsk_safe_free(self->genotype_store);
-    tsk_blkalloc_free(&self->descriptor_allocator);
+    tsk_safe_free(self->genotype_encode_buffer);
+    tsk_blkalloc_free(&self->main_allocator);
     tsk_blkalloc_free(&self->indexing_allocator);
     return 0;
 }
@@ -282,8 +285,9 @@ ancestor_builder_get_site_genotypes_subset(const ancestor_builder_t *self, tsk_i
     const tsk_id_t *samples, size_t num_samples)
 {
     size_t j;
-    size_t start = ((size_t) site) * self->encoded_genotypes_size;
-    const uint8_t *restrict encoded = self->genotype_store + start;
+    /* size_t start = ((size_t) site) * self->encoded_genotypes_size; */
+    /* const uint8_t *restrict encoded = self->genotype_store + start; */
+    const uint8_t *restrict encoded = self->sites[site].encoded_genotypes;
     tsk_id_t u;
     uint8_t byte;
     int v, bit_index;
@@ -308,8 +312,9 @@ ancestor_builder_get_site_genotypes_subset(const ancestor_builder_t *self, tsk_i
 static allele_t *
 ancestor_builder_get_site_genotypes(const ancestor_builder_t *self, tsk_id_t site)
 {
-    size_t start = ((size_t) site) * self->encoded_genotypes_size;
-    uint8_t *encoded = self->genotype_store + start;
+    /* size_t start = ((size_t) site) * self->encoded_genotypes_size; */
+    /* uint8_t *encoded = self->genotype_store + start; */
+    uint8_t *restrict encoded = self->sites[site].encoded_genotypes;
     allele_t *g = (allele_t *) encoded;
 
     if (self->flags & TSI_GENOTYPE_ENCODING_ONE_BIT) {
@@ -545,8 +550,15 @@ ancestor_builder_store_genotypes(ancestor_builder_t *self, tsk_id_t site,
     const allele_t *genotypes, uint8_t **ret_dest)
 {
     int ret = 0;
-    size_t start = ((size_t) site) * self->encoded_genotypes_size;
-    uint8_t *dest = self->genotype_store + start;
+    /* size_t start = ((size_t) site) * self->encoded_genotypes_size; */
+    uint8_t *dest = tsk_blkalloc_get(
+            &self->main_allocator, self->encoded_genotypes_size);
+
+    if (dest == NULL) {
+        ret = TSI_ERR_NO_MEMORY;
+        goto out;
+    }
+    self->sites[site].encoded_genotypes = dest;
 
     if (self->flags & TSI_GENOTYPE_ENCODING_ONE_BIT) {
         ret = packbits(genotypes, self->num_samples, dest);
@@ -554,6 +566,7 @@ ancestor_builder_store_genotypes(ancestor_builder_t *self, tsk_id_t site,
         memcpy(dest, genotypes, self->num_samples * sizeof(allele_t));
     }
     *ret_dest = dest;
+out:
     return ret;
 }
 
@@ -687,7 +700,7 @@ ancestor_builder_finalise(ancestor_builder_t *self)
             self->num_ancestors++;
             descriptor->time = time_map->time;
             focal_sites = tsk_blkalloc_get(
-                &self->descriptor_allocator,
+                &self->main_allocator,
                 pattern_map->num_sites * sizeof(tsk_id_t));
             if (focal_sites == NULL) {
                 ret = TSI_ERR_NO_MEMORY;

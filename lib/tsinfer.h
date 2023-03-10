@@ -66,9 +66,9 @@ typedef struct _node_segment_list_node_t {
     struct _node_segment_list_node_t *next;
 } node_segment_list_node_t;
 
-/* TODO this struct is now a bit redundant, we might just factor out */
 typedef struct {
     double time;
+    uint8_t *encoded_genotypes;
 } site_t;
 
 typedef struct {
@@ -110,13 +110,13 @@ typedef struct {
     int flags;
     site_t *sites;
     avl_tree_t time_map;
-    tsk_blkalloc_t descriptor_allocator;
+    tsk_blkalloc_t main_allocator;
     tsk_blkalloc_t indexing_allocator;
     ancestor_descriptor_t *descriptors;
     size_t encoded_genotypes_size;
     size_t decoded_genotypes_size;
+    uint8_t *genotype_encode_buffer;
     allele_t *genotype_decode_buffer;
-    uint8_t *genotype_store;
 } ancestor_builder_t;
 
 typedef struct _mutation_list_node_t {
@@ -213,6 +213,7 @@ int ancestor_builder_add_site(
 int ancestor_builder_finalise(ancestor_builder_t *self);
 int ancestor_builder_make_ancestor(const ancestor_builder_t *self, size_t num_focal_sites,
     const tsk_id_t *focal_sites, tsk_id_t *start, tsk_id_t *end, allele_t *haplotype);
+size_t ancestor_builder_get_memsize(const ancestor_builder_t *self);
 
 int ancestor_matcher_alloc(ancestor_matcher_t *self,
     tree_sequence_builder_t *tree_sequence_builder, double *recombination_rate,

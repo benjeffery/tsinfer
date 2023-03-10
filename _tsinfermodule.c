@@ -274,34 +274,6 @@ AncestorBuilder_ancestor_descriptors(AncestorBuilder *self)
         }
         PyTuple_SET_ITEM(descriptors, j, py_descriptor);
     }
-    /* j = 0; */
-    /* /1* It's not great that we're breaking encapsulation here and looking */
-    /*  * directly in to the builder's data structures. However, it's quite an */
-    /*  * awkward set of data to communicate, so it seems OK. *1/ */
-    /* for (f = self->builder->num_samples; f > 0; f--) { */
-    /*     for (a = self->builder->frequency_map[f].head; a != NULL; a = a->next) { */
-    /*         map_elem = (pattern_map_t *) a->item; */
-    /*         dims = map_elem->num_sites; */
-    /*         site_array = (PyArrayObject *) PyArray_SimpleNew(1, &dims, NPY_INT32); */
-    /*         if (site_array == NULL) { */
-    /*             goto out; */
-    /*         } */
-    /*         site_array_data = (int32_t *) PyArray_DATA(site_array); */
-    /*         /1* The elements are listed backwards, so reverse them *1/ */
-    /*         k = map_elem->num_sites - 1; */
-    /*         for (s = map_elem->sites; s != NULL; s = s->next) { */
-    /*             site_array_data[k] = (int32_t) s->site; */
-    /*             k--; */
-    /*         } */
-    /*         descriptor = Py_BuildValue("kO", (unsigned long) f, site_array); */
-    /*         if (descriptor == NULL) { */
-    /*             Py_DECREF(site_array); */
-    /*             goto out; */
-    /*         } */
-    /*         PyTuple_SET_ITEM(descriptors, j, descriptor); */
-    /*         j++; */
-    /*     } */
-    /* } */
     ret = descriptors;
     descriptors = NULL;
 out:
@@ -335,13 +307,31 @@ out:
     return ret;
 }
 
+static PyObject *
+AncestorBuilder_get_memsize(AncestorBuilder *self, void *closure)
+{
+    PyObject *ret = NULL;
+
+    if (AncestorBuilder_check_state(self) != 0) {
+        goto out;
+    }
+    ret = Py_BuildValue("k", (unsigned long) ancestor_builder_get_memsize(
+                self->builder));
+out:
+    return ret;
+}
+
+
 static PyMemberDef AncestorBuilder_members[] = {
     {NULL}  /* Sentinel */
 };
 
 static PyGetSetDef AncestorBuilder_getsetters[] = {
     {"num_sites", (getter) AncestorBuilder_get_num_sites, NULL, "The number of sites."},
-    {"num_ancestors", (getter) AncestorBuilder_get_num_ancestors, NULL, "The number of ancestors."},
+    {"num_ancestors", (getter) AncestorBuilder_get_num_ancestors, NULL,
+        "The number of ancestors."},
+    {"num_ancestors", (getter) AncestorBuilder_get_memsize, NULL,
+        "The number of allocated bytes."},
     {NULL}  /* Sentinel */
 };
 
