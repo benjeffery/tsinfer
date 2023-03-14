@@ -61,19 +61,15 @@ out:
 /* NOTE: this is a simple initial version, it will probably be worth having
  * more highly tuned versions of this, using e.g., AVX registeres */
 void
-unpackbits(const uint8_t *restrict source, size_t len, allele_t *restrict dest)
+unpackbits(const uint8_t *restrict source, size_t len, int8_t *restrict dest)
 {
-    size_t j, k, i;
-    int v;
-
-    k = 0;
-    for (j = 0; j < len; j++) {
-        /* I'm assuming any compiler will unroll this? */
-        for (i = 0; i < 8; i++) {
-            v = source[j] & (1 << i);
-            dest[k + i] = (allele_t) v != 0;
-        }
-        k += 8;
+    uint64_t MAGIC = 0x8040201008040201ULL;
+    uint64_t MASK = 0x8080808080808080ULL;
+    size_t dest_index = 0;
+    for (size_t i = 0; i < len; i++) {
+        uint64_t t = ((MAGIC * source[i]) & MASK) >> 7;
+        *(uint64_t *) &dest[dest_index] = t;
+        dest_index += 8;
     }
 }
 
@@ -114,7 +110,8 @@ ancestor_builder_check_state(const ancestor_builder_t *self)
             count = 0;
             for (s = pattern_map->sites; s != NULL; s = s->next) {
                 assert(self->sites[s->site].time == time_map->time);
-                assert(self->sites[s->site].encoded_genotypes == pattern_map->encoded_genotypes);
+                assert(self->sites[s->site].encoded_genotypes
+                       == pattern_map->encoded_genotypes);
                 count++;
             }
             assert(pattern_map->num_sites == count);
@@ -205,8 +202,7 @@ ancestor_builder_alloc(
     self->descriptors = calloc(max_sites, sizeof(ancestor_descriptor_t));
     self->genotype_encode_buffer = calloc(self->encoded_genotypes_size, 1);
     if (self->sites == NULL || self->descriptors == NULL
-        || self->genotype_encode_buffer == NULL
-        ) {
+        || self->genotype_encode_buffer == NULL) {
         ret = TSI_ERR_NO_MEMORY;
         goto out;
     }
@@ -279,7 +275,7 @@ out:
 
 static void
 ancestor_builder_get_site_genotypes_subset(const ancestor_builder_t *self, tsk_id_t site,
-    const tsk_id_t *samples, size_t num_samples, allele_t * restrict dest)
+    const tsk_id_t *samples, size_t num_samples, allele_t *restrict dest)
 {
     size_t j;
     const uint8_t *restrict encoded = self->sites[site].encoded_genotypes;
@@ -304,8 +300,8 @@ ancestor_builder_get_site_genotypes_subset(const ancestor_builder_t *self, tsk_i
 }
 
 static void
-ancestor_builder_get_site_genotypes(const ancestor_builder_t *self, tsk_id_t site,
-        allele_t *restrict dest)
+ancestor_builder_get_site_genotypes(
+    const ancestor_builder_t *self, tsk_id_t site, allele_t *restrict dest)
 {
     uint8_t *restrict encoded = self->sites[site].encoded_genotypes;
 
@@ -317,9 +313,8 @@ ancestor_builder_get_site_genotypes(const ancestor_builder_t *self, tsk_id_t sit
 }
 
 static inline void
-ancestor_builder_get_consistent_samples(
-    const ancestor_builder_t *self, tsk_id_t site, tsk_id_t *samples,
-    size_t *num_samples, allele_t *restrict genotypes)
+ancestor_builder_get_consistent_samples(const ancestor_builder_t *self, tsk_id_t site,
+    tsk_id_t *samples, size_t *num_samples, allele_t *restrict genotypes)
 {
     tsk_id_t j, k;
     ancestor_builder_get_site_genotypes(self, site, genotypes);
@@ -337,8 +332,7 @@ ancestor_builder_get_consistent_samples(
 static int
 ancestor_builder_compute_ancestral_states(const ancestor_builder_t *self, int direction,
     tsk_id_t focal_site, allele_t *ancestor, tsk_id_t *restrict sample_set,
-    bool *restrict disagree, tsk_id_t *last_site_ret,
-    allele_t *restrict genotypes)
+    bool *restrict disagree, tsk_id_t *last_site_ret, allele_t *restrict genotypes)
 {
     int ret = 0;
     tsk_id_t last_site = focal_site;
@@ -497,7 +491,8 @@ out:
 /* Build the ancestors for sites in the specified focal sites */
 int
 ancestor_builder_make_ancestor(const ancestor_builder_t *self, size_t num_focal_sites,
-    const tsk_id_t *focal_sites, tsk_id_t *ret_start, tsk_id_t *ret_end, allele_t *ancestor)
+    const tsk_id_t *focal_sites, tsk_id_t *ret_start, tsk_id_t *ret_end,
+    allele_t *ancestor)
 {
     int ret = 0;
     tsk_id_t focal_site, last_site;
@@ -545,8 +540,8 @@ ancestor_builder_store_genotypes(ancestor_builder_t *self, tsk_id_t site,
 {
     int ret = 0;
     /* size_t start = ((size_t) site) * self->encoded_genotypes_size; */
-    uint8_t *dest = tsk_blkalloc_get(
-            &self->main_allocator, self->encoded_genotypes_size);
+    uint8_t *dest
+        = tsk_blkalloc_get(&self->main_allocator, self->encoded_genotypes_size);
 
     if (dest == NULL) {
         ret = TSI_ERR_NO_MEMORY;
@@ -633,8 +628,7 @@ out:
  * site a to focal site b */
 static bool
 ancestor_builder_break_ancestor(ancestor_builder_t *self, tsk_id_t a, tsk_id_t b,
-    const tsk_id_t *restrict samples, size_t num_samples,
-    allele_t *restrict genotypes)
+    const tsk_id_t *restrict samples, size_t num_samples, allele_t *restrict genotypes)
 {
     bool ret = false;
     tsk_id_t j, k;
@@ -695,8 +689,7 @@ ancestor_builder_finalise(ancestor_builder_t *self)
             self->num_ancestors++;
             descriptor->time = time_map->time;
             focal_sites = tsk_blkalloc_get(
-                &self->main_allocator,
-                pattern_map->num_sites * sizeof(tsk_id_t));
+                &self->main_allocator, pattern_map->num_sites * sizeof(tsk_id_t));
             if (focal_sites == NULL) {
                 ret = TSI_ERR_NO_MEMORY;
                 goto out;
@@ -711,14 +704,13 @@ ancestor_builder_finalise(ancestor_builder_t *self)
             /* Now check to see if we need to split this ancestor up
              * further */
             if (pattern_map->num_sites > 1) {
-                ancestor_builder_get_consistent_samples(
-                    self, focal_sites[0], consistent_samples, &num_consistent_samples,
-                    genotypes);
+                ancestor_builder_get_consistent_samples(self, focal_sites[0],
+                    consistent_samples, &num_consistent_samples, genotypes);
             }
             for (j = 0; j < pattern_map->num_sites - 1; j++) {
                 if (ancestor_builder_break_ancestor(self, focal_sites[j],
-                        focal_sites[j + 1], consistent_samples,
-                        num_consistent_samples, genotypes)) {
+                        focal_sites[j + 1], consistent_samples, num_consistent_samples,
+                        genotypes)) {
                     p = focal_sites + j + 1;
                     descriptor->num_focal_sites = (size_t)(p - descriptor->focal_sites);
                     descriptor = self->descriptors + self->num_ancestors;
