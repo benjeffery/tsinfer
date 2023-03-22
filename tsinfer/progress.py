@@ -35,6 +35,7 @@ class ProgressMonitor:
         augment_ancestors=False,
         match_samples=False,
         verify=False,
+        **kwargs,
     ):
         self.enabled = enabled
         self.num_bars = 0
@@ -53,7 +54,7 @@ class ProgressMonitor:
         self.current_count = 0
         self.current_instance = None
         if not verify:
-            # Only show extra detail if we are runing match-ancestors by itself.
+            # Only show extra detail if we are running match-ancestors by itself.
             self.show_detail = self.num_bars == 1
         self.descriptions = {
             "ga_add_sites": "ga-add",
@@ -66,6 +67,7 @@ class ProgressMonitor:
             "ms_extra_sites": "ms-xsites",
             "verify": "verify",
         }
+        self.kwargs = kwargs
 
     def set_detail(self, info):
         if self.show_detail:
@@ -88,6 +90,7 @@ class ProgressMonitor:
             dynamic_ncols=True,
             smoothing=0.01,
             unit_scale=True,
+            **self.kwargs,
         )
         return self.current_instance
 
