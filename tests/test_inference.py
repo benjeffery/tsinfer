@@ -546,7 +546,7 @@ class TestTruncateAncestorsRoundTrip(TestRoundTrip):
             params = [(0.4, 0.6, 1), (0, 1, 10)]
         for param in params:
             truncated_ancestors = ancestors.truncate_ancestors(
-                param[0], param[1], param[2]
+                param[0], param[1], param[2], buffer_length=2
             )
             engines = [tsinfer.C_ENGINE, tsinfer.PY_ENGINE]
             for engine in engines:
@@ -611,7 +611,7 @@ class TestTruncateAncestorsRoundTripFromDisk(TestRoundTrip):
                 params = [(0.4, 0.6, 1), (0, 1, 10)]
             for param in params:
                 truncated_ancestors = ancestors.truncate_ancestors(
-                    param[0], param[1], param[2]
+                    param[0], param[1], param[2], buffer_length=2
                 )
                 engines = [tsinfer.C_ENGINE, tsinfer.PY_ENGINE]
                 for engine in engines:
