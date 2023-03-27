@@ -2466,7 +2466,10 @@ class SgkitSampleData(SampleData):
     @property
     def individuals_metadata(self):
         try:
-            return self.data["individuals/metadata"]
+            return zarr.array(
+                [{"sample_id": s} for s in self.data["sample_id"]],
+                object_codec=numcodecs.JSON(),
+            )
         except KeyError:
             return zarr.array(
                 [{}] * self.num_individuals, object_codec=numcodecs.JSON()

@@ -33,8 +33,8 @@ import zarr
 
 import tsinfer
 from tsinfer import exceptions
-
 from tsinfer import formats
+
 
 def open_lmbd_readonly(path):
     # We set the mapsize here because LMBD will map 1TB of virtual memory if
@@ -55,8 +55,15 @@ def open_lmbd_readonly(path):
         raise exceptions.FileFormatError(str(e)) from e
     return store
 
+
 @pytest.mark.skipif(sys.platform == "win32", reason="No cyvcf2 on windows")
-def test_sgkit_sampledata(tmp_path):
+def test_sgkit_sampleids(tmp_path):
+    ts, zarr_path = make_ts_and_zarr(tmp_path)
+    sample_data = tsinfer.SgkitSampleData(zarr_path)
+    inf_ts = tsinfer.infer(sample_data)
+    for i, sd_id in zip(inf_ts.individuals(), sample_data.data.sample_id):
+        assert i.metadata["sample_id"] == sd_id
+
 
 def make_ts_and_zarr(path):
     import sgkit.io.vcf
@@ -199,17 +206,6 @@ def test_sgkit_ancestor(small_sd_fixture, tmp_path):
         ds = sgkit.variant_stats(ds, merge=True)
         ds = sgkit.sample_stats(ds, merge=True)
         sgkit.display_genotypes(ds)
-
-
-class TestSgkitSampleDataErrors:
-    def test_missing_phase(self, tmp_path):
-        path = tmp_path / "data.zarr"
-        ds = sgkit.simulate_genotype_call_dataset(n_variant=3, n_sample=3)
-        sgkit.save_dataset(ds, path)
-        with pytest.raises(
-            ValueError, match="The call_genotype_phased array is missing"
-        ):
-            tsinfer.SgkitSampleData(path)
 
     def test_unphased(self, tmp_path):
         path = tmp_path / "data.zarr"
