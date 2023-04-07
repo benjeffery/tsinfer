@@ -28,6 +28,7 @@ import itertools
 import json
 import logging
 import queue
+import sys
 import threading
 import time
 
@@ -2186,6 +2187,7 @@ class SampleMatcher(Matcher):
 
         ts = tables.tree_sequence()
         num_additional_sites = self.sample_data.num_sites - self.num_sites
+        print(num_additional_sites)
         if map_additional_sites and num_additional_sites > 0:
             logger.info("Mapping additional sites")
             assert np.array_equal(ts.samples(), list(self.sample_id_map.values()))
@@ -2517,3 +2519,71 @@ def minimise(ts):
         filter_individuals=False,
         filter_populations=False,
     )
+
+
+class TSBWrapper:
+    def __init__(self, engine, tsb, num_alleles, max_nodes, max_edges):
+        self.engine = engine
+        self.tsb = tsb
+        self.num_alleles = num_alleles
+        self.max_nodes = max_nodes
+        self.max_edges = max_edges
+
+    def __getstate__(self):
+        r = {
+            "engine": self.engine,
+            "num_alleles": self.num_alleles,
+            "max_nodes": self.max_nodes,
+            "max_edges": self.max_edges,
+            "nodes": self.tsb.dump_nodes(),
+            "edges": self.tsb.dump_edges(),
+            "mutations": self.tsb.dump_mutations(),
+        }
+        with open("/home/benj/projects/tsinfer/in", "w") as f:
+            print(r, file=f)
+        return r
+
+    def __setstate__(self, state):
+        # Print to file "out"
+        with open("/home/benj/projects/tsinfer/out", "w") as f:
+            print(state, file=f)
+        self.engine = state["engine"]
+        self.num_alleles = state["num_alleles"]
+        self.max_nodes = state["max_nodes"]
+        self.max_edges = state["max_edges"]
+
+        if self.engine == constants.C_ENGINE:
+            self.tsb = _tsinfer.TreeSequenceBuilder(self.num_alleles, self.max_nodes, self.max_edges)
+        else:
+            self.tsb = algorithm.TreeSequenceBuilder(self.num_alleles, self.max_nodes, self.max_edges)
+
+        #Annoyingly dump and restore have these reversed
+        flags, time = state["nodes"]
+        self.tsb.restore_nodes(time, flags)
+        self.tsb.restore_edges(*state["edges"])
+        self.tsb.restore_mutations(*state["mutations"])
+
+
+def find_path(index_and_haplotype, start, end, engine, tree_sequence_builder_wrapper,
+              recombination,
+              mismatch,
+              precision,
+              extended_checks,
+              ):
+    index, haplotype = index_and_haplotype
+    ancestor_matcher_class = _tsinfer.AncestorMatcher if engine == constants.C_ENGINE else algorithm.AncestorMatcher
+    matcher = ancestor_matcher_class(
+        tree_sequence_builder_wrapper.tsb,
+        recombination=recombination,
+        mismatch=mismatch,
+        precision=precision,
+        extended_checks=extended_checks,
+    )
+    match = np.full(tree_sequence_builder_wrapper.tsb.num_sites, tskit.MISSING_DATA, np.int8)
+    missing = haplotype == tskit.MISSING_DATA
+    l_r_p = matcher.find_path(haplotype, start, end, match)
+    match[missing] = tskit.MISSING_DATA
+    diffs = start + np.where(haplotype[start:end] != match[start:end])[0]
+    derived_state = haplotype[diffs]
+    muts = (diffs.astype(np.int32), derived_state)
+    return index, l_r_p, muts, matcher.mean_traceback_size, matcher.total_memory
