@@ -475,6 +475,7 @@ def match_ancestors(
     extended_checks=False,
     time_units=None,
     record_provenance=True,
+    dask=False,
 ):
     """
     match_ancestors(sample_data, ancestor_data, *, recombination_rate=None,\
@@ -529,6 +530,7 @@ def match_ancestors(
         extended_checks=extended_checks,
         engine=engine,
         progress_monitor=progress_monitor,
+        dask=dask,
     )
     ts = matcher.match_ancestors()
     tables = ts.dump_tables()
@@ -1591,6 +1593,55 @@ class AncestorMatcher(Matcher):
         for j in range(self.num_threads):
             match_threads[j].join()
 
+    def __match_ancestors_dask(self):
+        for j in range(self.start_epoch, self.num_epochs):
+            self.__start_epoch(j)
+            start, end = map(int, self.epoch_slices[j])
+
+            tree_sequence_builder_wrapper = TSBWrapper(
+                self.engine,
+                self.tree_sequence_builder,
+                self.num_alleles,
+                self.max_nodes,
+                self.max_edges,
+            )
+            tree_sequence_builder_wrapper_deferred = dask.delayed(
+                tree_sequence_builder_wrapper
+            )
+            tasks = []
+            for ancestor_id in range(start, end):
+                a = next(self.ancestors)
+                assert ancestor_id == a.id
+
+                tasks.append(
+                    find_path(
+                        self.engine,
+                        tree_sequence_builder_wrapper_deferred,
+                        a.full_haplotype,
+                        a.start,
+                        a.end,
+                        recombination=self.recombination,
+                        mismatch=self.mismatch,
+                        precision=self.precision,
+                        extended_checks=self.extended_checks,
+                    )
+                )
+
+            done = dask.compute(*tasks)
+
+            for ancestor_id, (
+                (left, right, parent),
+                (diffs, derived_state),
+                matcher_mean_traceback_size,
+                _matcher_total_memory,
+            ) in zip(range(start, end), done):
+                self.results.set_path(ancestor_id, left, right, parent)
+                self.results.set_mutations(ancestor_id, diffs, derived_state)
+                self.mean_traceback_size[0] += matcher_mean_traceback_size
+                self.num_matches[0] += 1
+
+            self.__complete_epoch(j)
+
     def match_ancestors(self):
         logger.info(
             "Starting ancestor matching for {} dependency levels".format(
@@ -1598,7 +1649,9 @@ class AncestorMatcher(Matcher):
             )
         )
         self.match_progress = self.progress_monitor.get("ma_match", self.num_ancestors)
-        if self.num_threads <= 0:
+        if self.dask:
+            self.__match_ancestors_dask()
+        elif self.num_threads <= 0:
             self.__match_ancestors_single_threaded()
         else:
             self.__match_ancestors_multi_threaded()
