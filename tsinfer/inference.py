@@ -28,10 +28,10 @@ import itertools
 import json
 import logging
 import queue
-import sys
 import threading
 import time
 
+import dask
 import humanize
 import numpy as np
 import tskit
@@ -71,6 +71,42 @@ inference_type_metadata_definition = {
         constants.INFERENCE_PARSIMONY,
     ],
 }
+
+
+@dask.delayed
+def find_path(
+    engine,
+    tree_sequence_builder_wrapper,
+    haplotype,
+    start,
+    end,
+    recombination,
+    mismatch,
+    precision,
+    extended_checks,
+):
+    ancestor_matcher_class = (
+        _tsinfer.AncestorMatcher
+        if engine == constants.C_ENGINE
+        else algorithm.AncestorMatcher
+    )
+    matcher = ancestor_matcher_class(
+        tree_sequence_builder_wrapper.tsb,
+        recombination=recombination,
+        mismatch=mismatch,
+        precision=precision,
+        extended_checks=extended_checks,
+    )
+    match = np.full(
+        tree_sequence_builder_wrapper.tsb.num_sites, tskit.MISSING_DATA, np.int8
+    )
+    missing = haplotype == tskit.MISSING_DATA
+    l_r_p = matcher.find_path(haplotype, start, end, match)
+    match[missing] = tskit.MISSING_DATA
+    diffs = start + np.where(haplotype[start:end] != match[start:end])[0]
+    derived_state = haplotype[diffs]
+    muts = (diffs.astype(np.int32), derived_state)
+    return l_r_p, muts, matcher.mean_traceback_size, matcher.total_memory
 
 
 def add_to_schema(schema, name, definition=None, required=False):
@@ -612,6 +648,7 @@ def match_samples(
     progress_monitor=None,
     simplify=None,  # deprecated
     record_provenance=True,
+    dask=False,
 ):
     """
     match_samples(sample_data, ancestors_ts, *, recombination_rate=None,\
@@ -693,6 +730,7 @@ def match_samples(
         extended_checks=extended_checks,
         engine=engine,
         progress_monitor=progress_monitor,
+        dask=dask,
     )
     sample_indexes = check_sample_indexes(sample_data, indexes)
     sample_times = np.zeros(
@@ -1130,6 +1168,7 @@ class Matcher:
         engine=constants.C_ENGINE,
         progress_monitor=None,
         allow_multiallele=False,
+        dask=False,
     ):
         self.sample_data = sample_data
         self.num_threads = num_threads
@@ -1142,10 +1181,12 @@ class Matcher:
         self.progress_monitor = _get_progress_monitor(progress_monitor)
         self.match_progress = None  # Allocated by subclass
         self.extended_checks = extended_checks
+        self.dask = dask
 
         all_sites = self.sample_data.sites_position[:]
         index = np.searchsorted(all_sites, inference_site_position)
         num_alleles = sample_data.num_alleles()[index]
+        self.num_alleles = num_alleles
         if not np.all(all_sites[index] == inference_site_position):
             raise ValueError(
                 "Site positions for inference must be a subset of those in "
@@ -1249,6 +1290,7 @@ class Matcher:
             f"Matching using {precision} digits of precision in likelihood calcs"
         )
 
+        self.engine = engine
         if engine == constants.C_ENGINE:
             logger.debug("Using C matcher implementation")
             self.tree_sequence_builder_class = _tsinfer.TreeSequenceBuilder
@@ -1263,16 +1305,16 @@ class Matcher:
 
         # Allocate 64K nodes and edges initially. This will double as needed and will
         # quickly be big enough even for very large instances.
-        max_edges = 64 * 1024
-        max_nodes = 64 * 1024
+        self.max_edges = 64 * 1024
+        self.max_nodes = 64 * 1024
         if np.any(num_alleles > 2) and not allow_multiallele:
             # Currently only used for unsupported extend operation. We can
             # remove in future versions.
             raise ValueError("Cannot currently match with > 2 alleles.")
         self.tree_sequence_builder = self.tree_sequence_builder_class(
-            num_alleles=num_alleles, max_nodes=max_nodes, max_edges=max_edges
+            num_alleles=num_alleles, max_nodes=self.max_nodes, max_edges=self.max_edges
         )
-        logger.debug(f"Allocated tree sequence builder with max_nodes={max_nodes}")
+        logger.debug(f"Allocated tree sequence builder with max_nodes={self.max_nodes}")
 
         # Allocate the matchers and statistics arrays.
         num_threads = max(1, self.num_threads)
@@ -1798,6 +1840,71 @@ class SampleMatcher(Matcher):
                 progress_monitor.update()
             progress_monitor.close()
 
+    def _match_samples_dask(self, sample_indexes):
+        num_samples = len(sample_indexes)
+        builder = self.tree_sequence_builder
+        _, times = builder.dump_nodes()
+        tree_sequence_builder_wrapper = TSBWrapper(
+            self.engine, builder, self.num_alleles, self.max_nodes, self.max_edges
+        )
+        tree_sequence_builder_wrapper_deferred = dask.delayed(
+            tree_sequence_builder_wrapper
+        )
+        logger.info(f"Started matching for {num_samples} samples")
+        if self.num_sites > 0:
+
+            sample_haplotypes = self.sample_data.haplotypes(
+                sample_indexes,
+                sites=self.inference_site_id,
+                recode_ancestral=True,
+            )
+            tasks = []
+            t = time.time()
+            for _j, haplotype in sample_haplotypes:
+                assert len(haplotype) == self.num_sites
+                tasks.append(
+                    find_path(
+                        self.engine,
+                        tree_sequence_builder_wrapper_deferred,
+                        haplotype,
+                        0,
+                        self.num_sites,
+                        recombination=self.recombination,
+                        mismatch=self.mismatch,
+                        precision=self.precision,
+                        extended_checks=self.extended_checks,
+                    )
+                )
+            print(f"Time to create tasks: {time.time() - t}")
+            t = time.time()
+            done = dask.compute(*tasks)
+            print(f"Time to compute tasks: {time.time() - t}")
+            t = time.time()
+
+            # TODO - We should be processing samples in batches as otherwise the result
+            # set will get too big.
+            for j, (
+                (left, right, parent),
+                (diffs, derived_state),
+                matcher_mean_traceback_size,
+                _matcher_total_memory,
+            ) in zip(sample_indexes, done):
+                self.mean_traceback_size[0] += matcher_mean_traceback_size
+                self.num_matches[0] += 1
+                node_id = int(self.sample_id_map[j])
+
+                if np.any(times[node_id] > times[parent]):
+                    p = parent[np.argmin(times[parent])]
+                    raise ValueError(
+                        f"Failed to put sample {j} (node {node_id}) at time "
+                        f"{times[node_id]} as it has a younger parent (node {p})."
+                    )
+                builder.add_path(
+                    node_id, left, right, parent, compress=self.path_compression
+                )
+                builder.add_mutations(node_id, diffs, derived_state)
+            print(f"Time to add paths: {time.time() - t}")
+
     def match_samples(self, sample_indexes, sample_times=None):
         if sample_times is None:
             sample_times = np.zeros(len(sample_indexes))
@@ -1805,7 +1912,10 @@ class SampleMatcher(Matcher):
         for j, t in zip(sample_indexes, sample_times):
             self.sample_id_map[j] = builder.add_node(t)
 
-        self._match_samples(sample_indexes)
+        if self.dask:
+            self._match_samples_dask(sample_indexes)
+        else:
+            self._match_samples(sample_indexes)
 
     def finalise(self):
         logger.info("Finalising tree sequence")
@@ -2297,51 +2407,25 @@ class TSBWrapper:
             "edges": self.tsb.dump_edges(),
             "mutations": self.tsb.dump_mutations(),
         }
-        with open("/home/benj/projects/tsinfer/in", "w") as f:
-            print(r, file=f)
         return r
 
     def __setstate__(self, state):
-        # Print to file "out"
-        with open("/home/benj/projects/tsinfer/out", "w") as f:
-            print(state, file=f)
         self.engine = state["engine"]
         self.num_alleles = state["num_alleles"]
         self.max_nodes = state["max_nodes"]
         self.max_edges = state["max_edges"]
 
         if self.engine == constants.C_ENGINE:
-            self.tsb = _tsinfer.TreeSequenceBuilder(self.num_alleles, self.max_nodes, self.max_edges)
+            self.tsb = _tsinfer.TreeSequenceBuilder(
+                self.num_alleles, self.max_nodes, self.max_edges
+            )
         else:
-            self.tsb = algorithm.TreeSequenceBuilder(self.num_alleles, self.max_nodes, self.max_edges)
+            self.tsb = algorithm.TreeSequenceBuilder(
+                self.num_alleles, self.max_nodes, self.max_edges
+            )
 
-        #Annoyingly dump and restore have these reversed
+        # Annoyingly dump and restore have these reversed
         flags, time = state["nodes"]
         self.tsb.restore_nodes(time, flags)
         self.tsb.restore_edges(*state["edges"])
         self.tsb.restore_mutations(*state["mutations"])
-
-
-def find_path(index_and_haplotype, start, end, engine, tree_sequence_builder_wrapper,
-              recombination,
-              mismatch,
-              precision,
-              extended_checks,
-              ):
-    index, haplotype = index_and_haplotype
-    ancestor_matcher_class = _tsinfer.AncestorMatcher if engine == constants.C_ENGINE else algorithm.AncestorMatcher
-    matcher = ancestor_matcher_class(
-        tree_sequence_builder_wrapper.tsb,
-        recombination=recombination,
-        mismatch=mismatch,
-        precision=precision,
-        extended_checks=extended_checks,
-    )
-    match = np.full(tree_sequence_builder_wrapper.tsb.num_sites, tskit.MISSING_DATA, np.int8)
-    missing = haplotype == tskit.MISSING_DATA
-    l_r_p = matcher.find_path(haplotype, start, end, match)
-    match[missing] = tskit.MISSING_DATA
-    diffs = start + np.where(haplotype[start:end] != match[start:end])[0]
-    derived_state = haplotype[diffs]
-    muts = (diffs.astype(np.int32), derived_state)
-    return index, l_r_p, muts, matcher.mean_traceback_size, matcher.total_memory
