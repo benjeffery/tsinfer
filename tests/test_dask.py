@@ -408,29 +408,32 @@ def match_samples(
         )
         mean_traceback_size = 0
         num_matches = 0
-        l_r_p = {}
-        muts = {}
 
         tree_sequence_builder_wrapper = tsinfer.TSBWrapper(engine, tree_sequence_builder, num_alleles, max_nodes, max_edges)
         _, times = tree_sequence_builder.dump_nodes()
 
         ### SAMPLEMATCHER.__process_sample
         ### MATCHER._find_path
-        batch_size = 1000
         start = 0
         end = num_sites
-
+        tree_sequence_builder_wrapper_delayed = dask.delayed(tree_sequence_builder_wrapper)
+        tasks = []
+        print("making task")
         for j, haplotype in sample_haplotypes:
-            l_r_p[j], muts[
-                j], matcher_mean_traceback_size, matcher_total_memory = find_path(
-                engine, tree_sequence_builder_wrapper,
+            tasks.append(find_path(
+                engine, tree_sequence_builder_wrapper_delayed,
                 haplotype, start, end,
                 recombination=recombination,
                 mismatch=mismatch,
                 precision=precision,
                 extended_checks=extended_checks,
-                ).compute()
+                ))
+        print("done")
 
+        for j, (l_r_p, muts, matcher_mean_traceback_size, matcher_total_memory) in zip(
+                sample_indexes,
+                dask.compute(*tasks)
+        ):
             mean_traceback_size += matcher_mean_traceback_size
             num_matches += 1
             logger.debug(
@@ -443,10 +446,8 @@ def match_samples(
                     humanize.naturalsize(matcher_total_memory, binary=True),
                 )
             )
-
-        for j in sample_indexes:
             node_id = int(sample_id_map[j])
-            left, right, parent = l_r_p[j]
+            left, right, parent = l_r_p
             if np.any(times[node_id] > times[parent]):
                 p = parent[np.argmin(times[parent])]
                 raise ValueError(
@@ -456,7 +457,7 @@ def match_samples(
             tree_sequence_builder.add_path(
                 node_id, left, right, parent, compress=path_compression
             )
-            diffs, derived_state = muts[j]
+            diffs, derived_state = muts
             tree_sequence_builder.add_mutations(node_id, diffs, derived_state)
 
     # SAMPLEMATCHER.get_samples_tree_sequence
@@ -632,14 +633,16 @@ def test_explore():
     # cluster = LocalCluster(processes=True, threads_per_worker=1, n_workers=4)
     client = Client('tcp://127.0.0.1:35677')
 
-    ts = msprime.sim_ancestry(1000, recombination_rate=3e-5, sequence_length=1e6,
+    ts = msprime.sim_ancestry(1000, recombination_rate=3e-5, sequence_length=1e8,
                               random_seed=42)
     ts = msprime.sim_mutations(ts, rate=3e-5, random_seed=42)
     print(ts)
     sd = tsinfer.SampleData.from_tree_sequence(ts)
-    anc = tsinfer.generate_ancestors(sd, num_threads=1)
+    anc = tsinfer.generate_ancestors(sd, num_threads=8)
+    print("Ancestors generated")
     anc_ts = tsinfer.match_ancestors(sd, anc, recombination_rate=2e-8, precision=13,
-                                     path_compression=True, num_threads=1)
+                                     path_compression=True, num_threads=8)
+    print("Ancestors matched")
     inf_ts = match_samples(sd, anc_ts, recombination_rate=2e-8, precision=13,
                            path_compression=True, num_threads=1, engine=constants.C_ENGINE)
 
