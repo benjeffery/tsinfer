@@ -3341,14 +3341,14 @@ class AncestorData(DataContainer):
         be a sorted list of indexes giving a subset of ancestors to return.
         For efficiency, the indexes should be a numpy integer array.
         """
-        start = self.ancestors_start[:]
-        end = self.ancestors_end[:]
-        time = self.ancestors_time[:]
-        focal_sites = self.ancestors_focal_sites[:]
-        haplotypes = chunk_iterator(self.ancestors_full_haplotype, indexes, dimension=1)
         if indexes is None:
-            indexes = range(len(time))
-        for j, h in zip(indexes, haplotypes):
+            indexes = np.arange(self.num_ancestors, dtype=np.int32)
+        start = self.ancestors_start_cached
+        end = self.ancestors_end_cached
+        time = self.ancestors_time_cached
+        focal_sites = self.ancestors_focal_sites_cached
+        haplotypes = chunk_iterator(self.ancestors_full_haplotype, indexes, dimension=1)
+        for (j, h) in zip(indexes, haplotypes):
             yield Ancestor(
                 id=j,
                 start=start[j],
@@ -3358,6 +3358,13 @@ class AncestorData(DataContainer):
                 # [0] to remove ploidy dimension
                 full_haplotype=h[:, 0],
             )
+
+    # This is pretty ugly
+    def load_read_caches(self):
+        self.ancestors_start_cached = self.ancestors_start[:]
+        self.ancestors_end_cached = self.ancestors_end[:]
+        self.ancestors_time_cached = self.ancestors_time[:]
+        self.ancestors_focal_sites_cached = self.ancestors_focal_sites[:]
 
 
 def load(path):

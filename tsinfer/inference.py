@@ -1643,8 +1643,8 @@ class AncestorMatcher(Matcher):
 
         # Add nodes for all the ancestors so that the ancestor IDs are equal
         # to the node IDs.
-        for ancestor in self.ancestor_data.ancestors():
-            self.tree_sequence_builder.add_node(ancestor.time)
+        for ancestor_time in self.ancestor_data.ancestors_time:
+            self.tree_sequence_builder.add_node(ancestor_time)
 
     def __ancestor_find_path(self, ancestor, thread_index=0):
         # NOTE we're no longer using the ancestor's focal sites as a way
@@ -1736,6 +1736,7 @@ class AncestorMatcher(Matcher):
             for j in range(self.num_threads)
         ]
         logger.debug(f"Started {self.num_threads} match worker threads")
+        self.ancestor_data.load_read_caches()
 
         for level, ancestor_ids in self.ancestors_dependency_level.items():
             self.__start_level(level, ancestor_ids)
