@@ -1797,10 +1797,102 @@ class AncestorMatcher(Matcher):
         for j in range(self.num_threads):
             match_threads[j].join()
 
+    def __match_ancestors_hybrid(self):
+        queue_depth = 8 * self.num_threads  # Seems like a reasonable limit
+        match_queue = queue.Queue(queue_depth)
+
+        def match_worker(thread_index):
+            while True:
+                work = match_queue.get()
+                if work is None:
+                    break
+                self.__ancestor_find_path(work, thread_index)
+                match_queue.task_done()
+            match_queue.task_done()
+
+        match_threads = [
+            threads.queue_consumer_thread(
+                match_worker, match_queue, name=f"match-worker-{j}", index=j
+            )
+            for j in range(self.num_threads)
+        ]
+        logger.debug(f"Started {self.num_threads} match worker threads")
+
+        self.ancestor_data.load_read_caches()
+
+        for level, ancestor_ids in self.ancestors_dependency_level.items():
+            self.__start_level(level, ancestor_ids)
+
+            if len(ancestor_ids) > self.num_threads * 2:
+                tree_sequence_builder_wrapper = TSBWrapper(
+                    self.engine,
+                    self.tree_sequence_builder,
+                    self.num_alleles,
+                    self.max_nodes,
+                    self.max_edges,
+                )
+                tree_sequence_builder_wrapper_deferred = dask.delayed(
+                    tree_sequence_builder_wrapper
+                )
+                tasks = []
+                ids = []
+                for i, a in enumerate(
+                    self.ancestor_data.ancestors(indexes=ancestor_ids)
+                ):
+                    # Ideally we would know the correct ratio here, or get both methods
+                    # to consume the same queue. For now, we just use a rough heuristic.
+                    if i < self.num_threads * 2:
+                        match_queue.put(a)
+                    else:
+                        ids.append(a.id)
+                        tasks.append(
+                            find_path(
+                                self.engine,
+                                tree_sequence_builder_wrapper_deferred,
+                                a.full_haplotype,
+                                a.start,
+                                a.end,
+                                recombination=self.recombination,
+                                mismatch=self.mismatch,
+                                precision=self.precision,
+                                extended_checks=self.extended_checks,
+                            )
+                        )
+
+                done = dask.compute(*tasks)
+                self.match_progress.update(len(ancestor_ids))
+
+                for ancestor_id, (
+                    (left, right, parent),
+                    (diffs, derived_state),
+                    matcher_mean_traceback_size,
+                    _matcher_total_memory,
+                ) in zip(ids, done):
+                    self.results.set_path(ancestor_id, left, right, parent)
+                    self.results.set_mutations(ancestor_id, diffs, derived_state)
+                    self.mean_traceback_size[0] += matcher_mean_traceback_size
+                    self.num_matches[0] += 1
+                match_queue.join()
+
+            else:
+                for ancestor in self.ancestor_data.ancestors(indexes=ancestor_ids):
+                    match_queue.put(ancestor)
+                # Block until all matches have completed.
+                match_queue.join()
+
+            self.__complete_level(level, ancestor_ids)
+
+        # Stop the the worker threads.
+        for _ in range(self.num_threads):
+            match_queue.put(None)
+        for j in range(self.num_threads):
+            match_threads[j].join()
+
     def __match_ancestors_dask(self):
-        for j in range(self.start_epoch, self.num_epochs):
-            self.__start_epoch(j)
-            start, end = map(int, self.epoch_slices[j])
+        self.ancestor_data.load_read_caches()
+
+        for level, ancestor_ids in self.ancestors_dependency_level.items():
+            self.__start_level(level, ancestor_ids)
 
             tree_sequence_builder_wrapper = TSBWrapper(
                 self.engine,
@@ -1813,10 +1905,7 @@ class AncestorMatcher(Matcher):
                 tree_sequence_builder_wrapper
             )
             tasks = []
-            for ancestor_id in range(start, end):
-                a = next(self.ancestors)
-                assert ancestor_id == a.id
-
+            for a in self.ancestor_data.ancestors(indexes=ancestor_ids):
                 tasks.append(
                     find_path(
                         self.engine,
@@ -1832,19 +1921,20 @@ class AncestorMatcher(Matcher):
                 )
 
             done = dask.compute(*tasks)
+            self.match_progress.update(len(ancestor_ids))
 
             for ancestor_id, (
                 (left, right, parent),
                 (diffs, derived_state),
                 matcher_mean_traceback_size,
                 _matcher_total_memory,
-            ) in zip(range(start, end), done):
+            ) in zip(ancestor_ids, done):
                 self.results.set_path(ancestor_id, left, right, parent)
                 self.results.set_mutations(ancestor_id, diffs, derived_state)
                 self.mean_traceback_size[0] += matcher_mean_traceback_size
                 self.num_matches[0] += 1
 
-            self.__complete_epoch(j)
+            self.__complete_level(level, ancestor_ids)
 
     def match_ancestors(self):
         logger.info(
@@ -1854,7 +1944,7 @@ class AncestorMatcher(Matcher):
         )
         self.match_progress = self.progress_monitor.get("ma_match", self.num_ancestors)
         if self.dask:
-            self.__match_ancestors_dask()
+            self.__match_ancestors_hybrid()
         elif self.num_threads <= 0:
             self.__match_ancestors_single_threaded()
         else:
