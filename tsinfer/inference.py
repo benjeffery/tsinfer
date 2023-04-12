@@ -1685,7 +1685,10 @@ class AncestorMatcher(Matcher):
         for level in np.unique(dep_level):
             if level > 0:  # Only run matching for ancestors that have dependencies
                 self.ancestors_dependency_level[level] = np.where(dep_level == level)[0]
-
+            # Write the number of ancestors per level to a CSV file
+            with open("level_counts.csv", "w") as f:
+                for anc_ids in self.ancestors_dependency_level.values():
+                    f.write(f"{len(anc_ids)}\n")
         # Add nodes for all the ancestors so that the ancestor IDs are equal
         # to the node IDs.
         for ancestor_time in self.ancestor_data.ancestors_time:
@@ -1823,7 +1826,7 @@ class AncestorMatcher(Matcher):
         for level, ancestor_ids in self.ancestors_dependency_level.items():
             self.__start_level(level, ancestor_ids)
 
-            if len(ancestor_ids) > self.num_threads * 2:
+            if len(ancestor_ids) > self.num_threads:
                 tree_sequence_builder_wrapper = TSBWrapper(
                     self.engine,
                     self.tree_sequence_builder,
@@ -1834,51 +1837,43 @@ class AncestorMatcher(Matcher):
                 tree_sequence_builder_wrapper_deferred = dask.delayed(
                     tree_sequence_builder_wrapper
                 )
-                tasks = []
-                ids = []
-                for i, a in enumerate(
-                    self.ancestor_data.ancestors(indexes=ancestor_ids)
-                ):
-                    # Ideally we would know the correct ratio here, or get both methods
-                    # to consume the same queue. For now, we just use a rough heuristic.
-                    if i < self.num_threads * 2:
-                        match_queue.put(a)
-                    else:
-                        ids.append(a.id)
-                        tasks.append(
-                            find_path(
-                                self.engine,
-                                tree_sequence_builder_wrapper_deferred,
-                                a.full_haplotype,
-                                a.start,
-                                a.end,
-                                recombination=self.recombination,
-                                mismatch=self.mismatch,
-                                precision=self.precision,
-                                extended_checks=self.extended_checks,
-                            )
+            tasks = []
+            ids = []
+            for i, a in enumerate(self.ancestor_data.ancestors(indexes=ancestor_ids)):
+                # Ideally we would know the correct ratio here, or get both methods
+                # to consume the same queue. For now, we just use a rough heuristic.
+                if i < self.num_threads:
+                    match_queue.put(a)
+                else:
+                    ids.append(a.id)
+                    tasks.append(
+                        find_path(
+                            self.engine,
+                            tree_sequence_builder_wrapper_deferred,
+                            a.full_haplotype,
+                            a.start,
+                            a.end,
+                            recombination=self.recombination,
+                            mismatch=self.mismatch,
+                            precision=self.precision,
+                            extended_checks=self.extended_checks,
                         )
+                    )
 
-                done = dask.compute(*tasks)
-                self.match_progress.update(len(ancestor_ids))
+            done = dask.compute(*tasks)
+            self.match_progress.update(len(tasks))
 
-                for ancestor_id, (
-                    (left, right, parent),
-                    (diffs, derived_state),
-                    matcher_mean_traceback_size,
-                    _matcher_total_memory,
-                ) in zip(ids, done):
-                    self.results.set_path(ancestor_id, left, right, parent)
-                    self.results.set_mutations(ancestor_id, diffs, derived_state)
-                    self.mean_traceback_size[0] += matcher_mean_traceback_size
-                    self.num_matches[0] += 1
-                match_queue.join()
-
-            else:
-                for ancestor in self.ancestor_data.ancestors(indexes=ancestor_ids):
-                    match_queue.put(ancestor)
-                # Block until all matches have completed.
-                match_queue.join()
+            for ancestor_id, (
+                (left, right, parent),
+                (diffs, derived_state),
+                matcher_mean_traceback_size,
+                _matcher_total_memory,
+            ) in zip(ids, done):
+                self.results.set_path(ancestor_id, left, right, parent)
+                self.results.set_mutations(ancestor_id, diffs, derived_state)
+                self.mean_traceback_size[0] += matcher_mean_traceback_size
+                self.num_matches[0] += 1
+            match_queue.join()
 
             self.__complete_level(level, ancestor_ids)
 
