@@ -1663,7 +1663,7 @@ class AncestorMatcher(Matcher):
         anc_iter = enumerate(zip(anc_start, anc_end, anc_time))
         print("Finding dependencies")
         t = time.time()
-        for i, epoch_time, epoch_grp in enumerate(
+        for i, (epoch_time, epoch_grp) in enumerate(
             itertools.groupby(anc_iter, key=lambda x: x[1][2])
         ):
             if i % 100 == 0:
