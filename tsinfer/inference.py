@@ -1661,6 +1661,8 @@ class AncestorMatcher(Matcher):
         anc_time = ancestor_data.ancestors_time[:]
         dep_level = np.zeros(self.num_ancestors, dtype=int)
         anc_iter = enumerate(zip(anc_start, anc_end, anc_time))
+        print("Finding dependencies")
+        t = time.time()
         for epoch_time, epoch_grp in itertools.groupby(anc_iter, key=lambda x: x[1][2]):
             curr_epoch_start = None
             for anc_id, (lft, rgt, t) in epoch_grp:
@@ -1682,6 +1684,9 @@ class AncestorMatcher(Matcher):
             dep_level[curr_epoch_start : (anc_id + 1)] = np.max(
                 dep_level[curr_epoch_start : (anc_id + 1)]
             )
+        print(f"Found dependencies in {time.time() - t:.2f} seconds")
+        print("Sorting ancestors by dependency level")
+        t = time.time()
         for level in np.unique(dep_level):
             if level > 0:  # Only run matching for ancestors that have dependencies
                 self.ancestors_dependency_level[level] = np.where(dep_level == level)[0]
@@ -1691,6 +1696,7 @@ class AncestorMatcher(Matcher):
                     f.write(f"{len(anc_ids)}\n")
         # Add nodes for all the ancestors so that the ancestor IDs are equal
         # to the node IDs.
+        print(f"Sorting ancestors in {time.time() - t:.2f} seconds")
         for ancestor_time in self.ancestor_data.ancestors_time:
             self.tree_sequence_builder.add_node(ancestor_time)
 
