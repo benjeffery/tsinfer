@@ -59,9 +59,7 @@ def make_ts_and_zarr(path, add_optional=False):
         sequence_length=50,
         random_seed=42,
     )
-    ts = msprime.sim_mutations(
-        ts, rate=0.025, model=msprime.BinaryMutationModel(), random_seed=42
-    )
+    ts = msprime.sim_mutations(ts, rate=0.025, model=msprime.JC69(), random_seed=42)
     tables = ts.dump_tables()
     tables.metadata_schema = EXAMPLE_SCHEMA
     sites_copy = tables.sites.copy()
@@ -90,11 +88,35 @@ def make_ts_and_zarr(path, add_optional=False):
     with open(path / "data.vcf", "w") as f:
         ts.write_vcf(f)
     sgkit.io.vcf.vcf_to_zarr(
-        # max_alt_alleles=4 tests tsinfer's ability to handle empty string alleles,
         path / "data.vcf",
         path / "data.zarr",
         ploidy=3,
-        max_alt_alleles=4,
+        max_alt_alleles=4,  # tests tsinfer's ability to handle empty string alleles
+    )
+
+    # Unfortunately, tskit will always put the ancestral allele in the REF field, which will then
+    # be the zeroth allele in the zarr file.  We need to shuffle the alleles around to make sure
+    # that we test ancestral allele handling.
+    ds = sgkit.load_dataset(path / "data.zarr")
+    site_alleles = ds["variant_allele"].values
+    num_alleles = [len([a for a in alleles if a != ""]) for alleles in site_alleles]
+    random = np.random.RandomState(42)
+    new_ancestral_allele_pos = [random.randint(0, n) for n in num_alleles]
+    new_site_alleles = []
+    index_remappers = []
+    for alleles, new_pos in zip(site_alleles, new_ancestral_allele_pos):
+        alleles = list(alleles)
+        indexes = list(range(len(alleles)))
+        alleles.insert(new_pos, alleles.pop(0))
+        indexes.insert(new_pos, indexes.pop(0))
+        new_site_alleles.append(alleles)
+        index_remappers.append(np.array(indexes))
+    ds["variant_allele"] = xr.DataArray(new_site_alleles, dims=["variants", "alleles"])
+    genotypes = ds["call_genotype"].values
+    for i, remapper in enumerate(index_remappers):
+        genotypes[i] = remapper[genotypes[i]]
+    ds["call_genotype"] = xr.DataArray(
+        genotypes, dims=["variants", "samples", "ploidy"]
     )
 
     if add_optional:
@@ -397,6 +419,30 @@ def test_sgkit_ancestral_allele(tmp_path):
     ancestral_allele = ds.variant_allele.values[:, 0]
     ancestral_allele[::2] = ds.variant_allele.values[::2, 1]
     add_array_to_dataset("variant_ancestral_allele", ancestral_allele, zarr_path)
+    samples = tsinfer.SgkitSampleData(zarr_path)
+    for alleles, aa, site_aa in zip(
+        ds.variant_allele.values, ancestral_allele, samples.sites_ancestral_allele[:]
+    ):
+        assert alleles[site_aa] == aa
+    inf_ts = tsinfer.infer(samples)
+    for v, inf_v in zip(ts.variants(), inf_ts.variants()):
+        assert np.array_equal(
+            np.array(v.alleles)[v.genotypes], np.array(inf_v.alleles)[inf_v.genotypes]
+        )
+    for aa, inf_aa in zip(ancestral_allele, inf_ts.sites()):
+        assert aa == inf_aa.ancestral_state
+
+
+def test_sgkit_ancestral_allele_same_ancestors(tmp_path):
+    ts, zarr_path = make_ts_and_zarr(tmp_path)
+    ds = sgkit.load_dataset(zarr_path)
+    print(ds.variant_allele.values)
+    ancestral_allele = [site.ancestral_state for site in ts.sites()]
+    add_array_to_dataset("variant_ancestral_allele", ancestral_allele, zarr_path)
+    # Check that the ancestral allele is not always the first allele as we wish to test
+    # remapping of alleles
+    assert np.any(ds.variant_allele.values[:, 0] != ancestral_allele)
+
     samples = tsinfer.SgkitSampleData(zarr_path)
     for alleles, aa, site_aa in zip(
         ds.variant_allele.values, ancestral_allele, samples.sites_ancestral_allele[:]
