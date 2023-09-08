@@ -800,7 +800,10 @@ def match_samples(
     ts = manager.finalise()
     if post_process:
         ts = _post_process(
-            ts, warn_if_unexpected_format=True, simplify_only=simplify_only
+            ts,
+            warn_if_unexpected_format=True,
+            simplify_only=simplify_only,
+            split_ultimate=False,
         )
     if record_provenance:
         tables = ts.dump_tables()
@@ -2321,7 +2324,7 @@ class SampleMatcher(Matcher):
 
         ts = tables.tree_sequence()
         num_additional_sites = self.sample_data.num_sites - self.num_sites
-        if map_additional_sites and num_additional_sites > 0:
+        if False and map_additional_sites and num_additional_sites > 0:
             logger.info("Mapping additional sites")
             assert np.array_equal(ts.samples(), list(self.sample_id_map.values()))
             ts = insert_missing_sites(
