@@ -145,7 +145,7 @@ def test_variantdata_accessors(tmp_path, in_mem):
     assert vd.format_name == "tsinfer-variant-data"
     assert vd.format_version == (0, 1)
     assert vd.finalised
-    assert vd.sequence_length == ts.sequence_length + 1337
+    assert vd.sequence_length == ts.sequence_length
     assert vd.num_sites == ts.num_sites
     assert vd.sites_metadata_schema == ts.tables.sites.metadata_schema.schema
     assert vd.sites_metadata == [site.metadata for site in ts.sites()]
@@ -340,38 +340,35 @@ class TestMultiContig:
         assert vdata.sequence_length == ts2.sequence_length
 
     @pytest.mark.parametrize("contig_id", ["chr1", "chr2"])
-    def test_contig_id_param(self, contig_id, tmp_path):
+    def test_multi_contig(self, contig_id, tmp_path):
         tree_seqs = {}
         tree_seqs["chr1"], tree_seqs["chr2"] = self.make_two_ts_dataset(tmp_path)
+        with pytest.raises(ValueError, match="multiple contigs"):
+            vdata = tsinfer.VariantData(
+                tmp_path, "variant_ancestral_allele"
+            )
+        root = zarr.open(tmp_path)
+        mask = root['variant_contig'][:] == (1 if contig_id == "chr1" else 0)
         vdata = tsinfer.VariantData(
-            tmp_path, "variant_ancestral_allele", contig_id=contig_id
+            tmp_path, "variant_ancestral_allele", site_mask=mask
         )
         assert np.all(tree_seqs[contig_id].sites_position == vdata.sites_position)
         assert vdata.contig_id == contig_id
-        assert vdata.sequence_length == tree_seqs[contig_id].sequence_length
+        assert vdata._contig_index == (0 if contig_id == "chr1" else 1)
+        assert vdata.sequence_length == tree_seqs[contig_id].sequence_length        
 
-    def test_contig_id_param_and_mask(self, tmp_path):
+    def test_mixed_contigs_error(self, tmp_path):
         ts1, ts2 = self.make_two_ts_dataset(tmp_path)
-        vdata = tsinfer.VariantData(
-            tmp_path,
-            "variant_ancestral_allele",
-            site_mask=np.array(
-                (ts1.num_sites + 1) * [True] + (ts2.num_sites - 1) * [False]
-            ),
-            contig_id="chr2",
-        )
-        assert np.all(ts2.sites_position[1:] == vdata.sites_position)
-        assert vdata.contig_id == "chr2"
-
-    @pytest.mark.parametrize("contig_id", ["chr1", "chr2"])
-    def test_contig_length(self, contig_id, tmp_path):
-        tree_seqs = {}
-        tree_seqs["chr1"], tree_seqs["chr2"] = self.make_two_ts_dataset(tmp_path)
-        vdata = tsinfer.VariantData(
-            tmp_path, "variant_ancestral_allele", contig_id=contig_id
-        )
-        assert vdata.sequence_length == tree_seqs[contig_id].sequence_length
-
+        mask = np.ones(ts1.num_sites + ts2.num_sites)
+        # Select two varaints, one from each contig
+        mask[0] = False
+        mask[-1] = False
+        with pytest.raises(ValueError, match="multiple contigs"):
+            vdata = tsinfer.VariantData(
+                tmp_path,
+                "variant_ancestral_allele",
+                site_mask=mask,
+            )
 
 @pytest.mark.skipif(sys.platform == "win32", reason="File permission errors on Windows")
 class TestSgkitMask:
@@ -930,22 +927,6 @@ class TestVariantDataErrors:
         with pytest.raises(NotImplementedError):
             tsinfer.VariantData.from_tree_sequence(None)
 
-    def test_multiple_contigs(self, tmp_path):
-        path = tmp_path / "data.zarr"
-        ds = sgkit.simulate_genotype_call_dataset(n_variant=3, n_sample=3, phased=True)
-        ds["contig_id"] = (
-            ds["contig_id"].dims,
-            np.array(["c10", "c11"], dtype="<U3"),
-        )
-        ds["variant_contig"] = (
-            ds["variant_contig"].dims,
-            np.array([0, 0, 1], dtype=ds["variant_contig"].dtype),
-        )
-        sgkit.save_dataset(ds, path)
-        with pytest.raises(
-            ValueError, match=r'Sites belong to multiple contigs \("c10", "c11"\)'
-        ):
-            tsinfer.VariantData(path, ds["variant_allele"][:, 0].astype(str))
 
     def test_all_masked(self, tmp_path):
         path = tmp_path / "data.zarr"
@@ -954,28 +935,6 @@ class TestVariantDataErrors:
         with pytest.raises(ValueError, match="All sites have been masked out"):
             tsinfer.VariantData(
                 path, ds["variant_allele"][:, 0].astype(str), site_mask=np.ones(3, bool)
-            )
-
-    def test_bad_contig_param(self, tmp_path):
-        path = tmp_path / "data.zarr"
-        ds = sgkit.simulate_genotype_call_dataset(n_variant=3, n_sample=3, phased=True)
-        sgkit.save_dataset(ds, path)
-        with pytest.raises(ValueError, match='"XX" not found'):
-            tsinfer.VariantData(
-                path, ds["variant_allele"][:, 0].astype(str), contig_id="XX"
-            )
-
-    def test_multiple_contig_param(self, tmp_path):
-        path = tmp_path / "data.zarr"
-        ds = sgkit.simulate_genotype_call_dataset(n_variant=3, n_sample=3, phased=True)
-        ds["contig_id"] = (
-            ds["contig_id"].dims,
-            np.array(["chr1", "chr1"], dtype="<U4"),
-        )
-        sgkit.save_dataset(ds, path)
-        with pytest.raises(ValueError, match='Multiple contigs named "chr1"'):
-            tsinfer.VariantData(
-                path, ds["variant_allele"][:, 0].astype(str), contig_id="chr1"
             )
 
     def test_missing_sites_time(self, tmp_path):

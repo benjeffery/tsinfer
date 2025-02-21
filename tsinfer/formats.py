@@ -2326,8 +2326,7 @@ class VariantData(SampleData):
     :param Union(array, str) site_mask: A numpy array of booleans specifying which
         sites to mask out (exclude) from the dataset. Alternatively, a string
         can be provided, giving the name of an array in the input dataset which contains
-        the site mask. If ``None`` (default), all sites are included (unless restricted
-        to a ``contig_id``, see below).
+        the site mask. If ``None`` (default), all sites are included.
     :param Union(array, str) sites_time: A numpy array of floats specifying the relative
         time of occurrence of the mutation to the derived state at each site. This must
         be of the same length as the number of unmasked sites. Alternatively, a
@@ -2337,11 +2336,11 @@ class VariantData(SampleData):
         reasonable approximation to the relative order of ancestors used for inference.
         Time values are ignored for sites not used in inference, such as singletons,
         sites with more than two alleles, or sites with an unknown ancestral state.
-    :param str contig_id: The name of the contig to use (e.g. "chr1"), if the .vcz file
-        contains multiple contigs; contig names can be found in the `.contig_id array
-        of the input dataset. If provided, sites associated with any other contigs will
-        be added to the sites that are masked out. If ``None`` (default), do not mark
-        out sites on the basis of their contig ID.
+    :param int sequence_length: An integer specifying the resulting `sequence_length`
+        attribute of the output tree sequence. If not specified the `contig_length`
+        attribute from the undelying zarr store for the contig of the used variants.
+        If that is not present then the maximum position plus one of the used variants
+        is used.
     """
 
     FORMAT_NAME = "tsinfer-variant-data"
@@ -2355,8 +2354,10 @@ class VariantData(SampleData):
         sample_mask=None,
         site_mask=None,
         sites_time=None,
-        contig_id=None,
+        sequence_length=None,
     ):
+        self._sequence_length=sequence_length
+        self._contig_index=None
         try:
             if len(path_or_zarr.call_genotype.shape) == 3:
                 # Assumed to be a VCF Zarr hierarchy
@@ -2389,24 +2390,15 @@ class VariantData(SampleData):
             raise ValueError(
                 "Site mask array must be the same length as the number of unmasked sites"
             )
-        if contig_id is not None:
-            contig_index = np.where(self.data.contig_id[:] == contig_id)[0]
-            if len(contig_index) == 0:
-                raise ValueError(
-                    f'"{contig_id}" not found among the available contig IDs: '
-                    + ",".join(f"{n}" for n in self.data.contig_id[:])
-                )
-            elif len(contig_index) > 1:
-                raise ValueError(f'Multiple contigs named "{contig_id}"')
-            contig_index = contig_index[0]
-            site_mask = np.logical_or(
-                site_mask, self.data["variant_contig"][:] != contig_index
-            )
-
+        
         # We negate the mask as it is much easier in numpy to have True=keep
         self.sites_select = ~site_mask.astype(bool)
+        
         if np.sum(self.sites_select) == 0:
-            raise ValueError("All sites have been masked out. Please unmask some")
+            raise ValueError(
+                "All sites have been masked out, at least one value"
+                "must be 'False' in the site mask"
+            )
 
         if sample_mask is None:
             sample_mask = np.full(self._num_individuals_before_mask, False, dtype=bool)
@@ -2437,18 +2429,19 @@ class VariantData(SampleData):
                     " unphased"
                 )
 
-        used_contigs = self.data.variant_contig[:][self.sites_select]
-        self._contig_index = used_contigs[0]
-        self._contig_id = self.data.contig_id[self._contig_index]
+        if "variant_contig" in self.data:
+            used_contigs = self.data.variant_contig[:][self.sites_select]
+            self._contig_index = used_contigs[0]
+            self._contig_id = self.data.contig_id[self._contig_index]
 
-        if np.any(used_contigs != self._contig_index):
-            contig_names = ", ".join(
-                f'"{self.data.contig_id[c]}"' for c in np.unique(used_contigs)
-            )
-            raise ValueError(
-                f"Sites belong to multiple contigs ({contig_names}). Please restrict "
-                "sites to one contig e.g. via the `contig_id` argument."
-            )
+            if np.any(used_contigs != self._contig_index):
+                contig_names = ", ".join(
+                    f'"{self.data.contig_id[c]}"' for c in np.unique(used_contigs)
+                )
+                raise ValueError(
+                    f"Sites belong to multiple contigs ({contig_names}). Please restrict "
+                    "sites to one contig using the sites_mask argument."
+                )
 
         if np.any(np.diff(self.sites_position) <= 0):
             raise ValueError(
@@ -2556,26 +2549,21 @@ class VariantData(SampleData):
     def sequence_length(self):
         """
         The sequence length of the contig associated with sites used in the dataset.
-        If the dataset has a "sequence_length" attribute, this is always used, otherwise
-        if the dataset has recorded contig lengths, the appropriate length is taken,
-        otherwise the length is calculated from the maximum variant position plus one.
+        If set manually then that value is used else if the dataset has recorded
+        contig lengths use that else the length is calculated from the maximum
+        variant position plus one.
         """
-        try:
-            return self.data.attrs["sequence_length"]
-        except KeyError:
-            if self._contig_index is not None:
-                try:
-                    if self._contig_index < len(self.data.contig_length):
-                        return self.data.contig_length[self._contig_index]
-                except AttributeError:
-                    pass  # contig_length is optional, fall back to calculating length
+        if self._sequence_length is not None:
+            return self._sequence_length
+        if self._contig_index is not None and "contig_length" in self.data:
+            return self.data.contig_length[self._contig_index]
         return int(np.max(self.data["variant_position"])) + 1
 
     @property
     def contig_id(self):
         """
         The contig ID (name) for all used sites, or None if no
-        contig IDs were provided
+        contig IDs were present in the zarr dataset
         """
         return self._contig_id
 
